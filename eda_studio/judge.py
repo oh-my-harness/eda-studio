@@ -16,26 +16,19 @@ def make_judge_fn(config: AppConfig):
         step_id = ctx["step_id"]
         structured = ctx.get("structured") or {}
         success = structured.get("success", False)
-        retry_count = ctx.get("retry_count", 0)
-        # RTL 步骤:output 非空表示模型产出了设计说明或调了工具,视为完成。
-        # output 空时 retry 让模型重试(有 max_retries 兜底),而非直接 abort。
-        rtl_done = bool(ctx.get("output"))
-        rtl_retry_exhausted = retry_count >= max_fix
 
+        # RTL 步骤:EndTurn 即视为完成(模型自己决定何时结束)。
+        # 不用 output 判断 —— runtime 的 FinalAnswer 空文本会覆盖
+        # text_delta,导致 output 为空即使模型之前调了工具。
+        # 如果模型没写文件就 EndTurn,simulate 步骤会失败 → debug_fix 修复。
         if step_id == "rtl_tx":
-            if rtl_done:
-                return "to:rtl_rx"
-            return "abort:done" if rtl_retry_exhausted else "retry"
+            return "to:rtl_rx"
 
         if step_id == "rtl_rx":
-            if rtl_done:
-                return "to:rtl_top"
-            return "abort:done" if rtl_retry_exhausted else "retry"
+            return "to:rtl_top"
 
         if step_id == "rtl_top":
-            if rtl_done:
-                return "to:simulate"
-            return "abort:done" if rtl_retry_exhausted else "retry"
+            return "to:simulate"
 
         if step_id == "simulate":
             if success:

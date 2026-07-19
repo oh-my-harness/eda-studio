@@ -17,33 +17,22 @@ def ctx(step_id, success=None, output="", retry_count=0):
     return {"step_id": step_id, "output": output, "step_count": 1, "retry_count": retry_count,
             "structured": {"success": success} if success is not None else {}}
 
-def test_rtl_tx_success():
+def test_rtl_tx_always_advances():
+    # RTL 步骤:EndTurn 即完成,不依赖 output(runtime FinalAnswer 空文本
+    # 会覆盖 text_delta,导致 output 为空即使模型调了工具)
     judge = make_judge_fn(make_config())
     assert judge(ctx("rtl_tx", output="generated")) == "to:rtl_rx"
+    assert judge(ctx("rtl_tx", output="")) == "to:rtl_rx"
 
-def test_rtl_tx_empty_output_retries():
-    judge = make_judge_fn(make_config())
-    assert judge(ctx("rtl_tx", output="")) == "retry"
-
-def test_rtl_tx_empty_output_retries_exhausted():
-    judge = make_judge_fn(make_config(max_fix=2))
-    assert judge(ctx("rtl_tx", output="", retry_count=2)) == "abort:done"
-
-def test_rtl_rx_success():
+def test_rtl_rx_always_advances():
     judge = make_judge_fn(make_config())
     assert judge(ctx("rtl_rx", output="generated")) == "to:rtl_top"
+    assert judge(ctx("rtl_rx", output="")) == "to:rtl_top"
 
-def test_rtl_rx_empty_output_retries():
-    judge = make_judge_fn(make_config())
-    assert judge(ctx("rtl_rx", output="")) == "retry"
-
-def test_rtl_top_success():
+def test_rtl_top_always_advances():
     judge = make_judge_fn(make_config())
     assert judge(ctx("rtl_top", output="generated")) == "to:simulate"
-
-def test_rtl_top_empty_output_retries():
-    judge = make_judge_fn(make_config())
-    assert judge(ctx("rtl_top", output="")) == "retry"
+    assert judge(ctx("rtl_top", output="")) == "to:simulate"
 
 def test_simulate_success_to_synthesize():
     judge = make_judge_fn(make_config())
