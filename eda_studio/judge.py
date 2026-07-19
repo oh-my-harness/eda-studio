@@ -57,7 +57,7 @@ def make_judge_fn(config: AppConfig):
             return "to:drc_fix"
 
         if step_id == "gds":
-            return "done"
+            return "abort:done"
 
         return "abort:done"
 

@@ -85,7 +85,7 @@ def test_drc_fail_to_drc_fix():
 
 def test_gds_done():
     judge = make_judge_fn(make_config())
-    assert judge(ctx("gds", success=True)) == "done"
+    assert judge(ctx("gds", success=True)) == "abort:done"
 
 def test_unknown_step_aborts():
     judge = make_judge_fn(make_config())
