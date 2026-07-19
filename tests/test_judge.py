@@ -13,26 +13,37 @@ def make_config(max_fix=3):
         docker_config=DockerConfig(image="i", container="c", workdir="/w", pdk="sky130A"),
     )
 
-def ctx(step_id, success=None, output="", retry_count=0):
+def ctx(step_id, success=None, output="", retry_count=0, tool_calls_count=0):
     return {"step_id": step_id, "output": output, "step_count": 1, "retry_count": retry_count,
+            "tool_calls_count": tool_calls_count,
             "structured": {"success": success} if success is not None else {}}
-
-def test_rtl_tx_always_advances():
-    # RTL 步骤:EndTurn 即完成,不依赖 output(runtime FinalAnswer 空文本
-    # 会覆盖 text_delta,导致 output 为空即使模型调了工具)
+def test_rtl_tx_done_when_tool_called():
     judge = make_judge_fn(make_config())
-    assert judge(ctx("rtl_tx", output="generated")) == "to:rtl_rx"
-    assert judge(ctx("rtl_tx", output="")) == "to:rtl_rx"
+    assert judge(ctx("rtl_tx", tool_calls_count=1)) == "to:rtl_rx"
 
-def test_rtl_rx_always_advances():
+def test_rtl_tx_retries_when_no_tool():
     judge = make_judge_fn(make_config())
-    assert judge(ctx("rtl_rx", output="generated")) == "to:rtl_top"
-    assert judge(ctx("rtl_rx", output="")) == "to:rtl_top"
+    assert judge(ctx("rtl_tx", tool_calls_count=0)) == "retry"
 
-def test_rtl_top_always_advances():
+def test_rtl_tx_aborts_when_retry_exhausted():
+    judge = make_judge_fn(make_config(max_fix=2))
+    assert judge(ctx("rtl_tx", tool_calls_count=0, retry_count=2)) == "abort:done"
+
+def test_rtl_rx_done_when_tool_called():
     judge = make_judge_fn(make_config())
-    assert judge(ctx("rtl_top", output="generated")) == "to:simulate"
-    assert judge(ctx("rtl_top", output="")) == "to:simulate"
+    assert judge(ctx("rtl_rx", tool_calls_count=1)) == "to:rtl_top"
+
+def test_rtl_rx_retries_when_no_tool():
+    judge = make_judge_fn(make_config())
+    assert judge(ctx("rtl_rx", tool_calls_count=0)) == "retry"
+
+def test_rtl_top_done_when_tool_called():
+    judge = make_judge_fn(make_config())
+    assert judge(ctx("rtl_top", tool_calls_count=1)) == "to:simulate"
+
+def test_rtl_top_retries_when_no_tool():
+    judge = make_judge_fn(make_config())
+    assert judge(ctx("rtl_top", tool_calls_count=0)) == "retry"
 
 def test_simulate_success_to_synthesize():
     judge = make_judge_fn(make_config())

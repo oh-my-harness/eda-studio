@@ -177,6 +177,7 @@ def build_workflow(config: AppConfig, design_name: str) -> WorkflowEngine:
         .with_hooks(_wrap_hooks(make_hooks(config)))
         .with_task_store(f"designs/{design_name}/.taskstore")
         .with_max_tokens(32768)  # glm-5.2 thinking ~8K token,默认 8192 会截断导致 content/tool_call 无法输出
+        .with_max_retries(config.workflow_config.max_fix_retries)  # judge 返回 "retry" 时的重试上限
     )
 
     # budget:runtime 内置记账(budget_limit/budget_exceeded_action 配置项
