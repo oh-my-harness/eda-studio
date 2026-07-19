@@ -86,8 +86,11 @@ def _check_api_reachable(config_path: str) -> tuple:
         cfg = load_config(config_path)
         key = cfg.provider_spec.get("api_key", "")
         base_url = cfg.provider_spec.get("base_url") or "https://api.openai.com/v1"
+        # base_url 可能不含 /v1(如 http://api.example.com/),自动补
+        if not base_url.rstrip("/").endswith("/v1"):
+            base_url = base_url.rstrip("/") + "/v1"
         model = cfg.model
-        url = base_url.rstrip("/") + "/chat/completions"
+        url = base_url + "/chat/completions"
         body = json.dumps({
             "model": model,
             "messages": [{"role": "user", "content": "ping"}],
@@ -140,14 +143,18 @@ def _check_container() -> tuple:
 
 def _check_eda_tools() -> list:
     """检查容器内 EDA 工具可用,返回 [(tool, ok, detail), ...]。"""
-    tools = ["verilator", "yosys", "openroad", "magic", "klayout"]
+    # 各工具版本检查命令(部分工具不认 --version)
+    version_cmds = {
+        "verilator": "verilator --version",
+        "yosys": "yosys -V",
+        "openroad": "openroad -version",
+        "magic": "magic -noconsole -dnull <<< 'exit'",
+        "klayout": "klayout -v",
+    }
     results = []
-    for tool in tools:
+    for tool, vcmd in version_cmds.items():
         try:
-            if tool == "magic":
-                cmd = ["docker", "exec", "eda-tools", "bash", "-lc", "magic -noconsole -dnull <<< 'exit'"]
-            else:
-                cmd = ["docker", "exec", "eda-tools", "bash", "-lc", f"{tool} --version"]
+            cmd = ["docker", "exec", "eda-tools", "bash", "-lc", vcmd]
             r = subprocess.run(cmd, capture_output=True, text=True, timeout=10)
             output = "\n".join(l for l in (r.stdout + r.stderr).split("\n") if not l.startswith("[INFO]"))
             ok = r.returncode == 0 or (tool == "magic" and "Magic 8" in output)
