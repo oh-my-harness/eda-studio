@@ -22,6 +22,7 @@ def render_executor(ctx: dict) -> dict:
                 "structured": {"success": False}}
 
     gds_path = to_container_path(gds_file, docker_cfg)
+    png_path = to_container_path(png_out, docker_cfg)
     rb = f"""\
 ly = RBA::Layout.new
 ly.read("{gds_path}")
