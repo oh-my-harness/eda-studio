@@ -165,6 +165,7 @@
         function setActiveNode(id) {
             stepOrder.forEach(sid => {
                 const n = document.getElementById('node-' + sid);
+                if (!n) return;  // node 尚未渲染(异步加载),跳过
                 let cls = 'flow-node';
                 if (sid === id) cls += ' active';
                 if (sid === viewStepId) cls += ' view';
@@ -219,12 +220,15 @@
                     totalCost = 0;
                     updateCostDisplay();
                     stepRound = {};
-                    // 先加载 workflow steps,再 resetFlowchart(用新 stepConfig)+ connectWS
-                    fetch('/api/workflow-steps').then(r => r.json()).then(data => {
+                    // 立即连 WS(不阻塞),异步加载 workflow steps 后再 resetFlowchart
+                    connectWS();
+                    fetch('/api/workflow-steps').then(r => r.ok ? r.json() : Promise.reject(r.status)).then(data => {
                         stepOrder = data.steps.map(s => s.id);
                         data.steps.forEach(s => { stepConfig[s.id] = s; });
                         resetFlowchart();
-                        connectWS();
+                    }).catch(err => {
+                        console.error('workflow-steps failed:', err);
+                        // fallback:即使没拿到 step 列表,WS 事件仍会驱动 step_started
                     });
                 } else {
                     alert('启动失败');
@@ -250,12 +254,14 @@
                 handleStepProgress(event);
                 return;
             }
-            const list = document.getElementById('events');
-            const li = document.createElement('li');
-            const ts = new Date().toLocaleTimeString();
-
             if (type === 'step_started') {
                 const sid = event.step_id;
+                // 如果 step 不在预加载列表(异步竞态),动态补加
+                if (!stepConfig[sid]) {
+                    stepConfig[sid] = { name: event.step_name || sid, icon: '🔹', type: 'LLM' };
+                    stepOrder.push(sid);
+                    buildFlowchart();
+                }
                 const cfg = stepConfig[sid] || { name: event.step_name || sid, icon: '🔹' };
                 stepRound[sid] = (stepRound[sid] || 0) + 1;
                 currentStepId = sid;
