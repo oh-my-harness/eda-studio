@@ -149,3 +149,71 @@ def test_drc_nonzero_returncode_fails(tmp_path, monkeypatch):
                return_value=fake_completed(stdout="magic crashed", returncode=1)):
         r = drc_executor({"context": {"design_dir": str(d.parent), "docker_config": DOCKER, "shell_config": SHELL}})
     assert r["structured"]["success"] is False
+
+def test_synthesize_timeout_returns_failure(tmp_path, monkeypatch):
+    """P2 #5: run_shell 抛 TimeoutExpired 时 synthesize 返回 success=False。"""
+    import subprocess
+    monkeypatch.chdir(tmp_path)
+    rtl = tmp_path / "designs" / "uart" / "rtl"
+    rtl.mkdir(parents=True)
+    (rtl / "uart.v").write_text("module uart; endmodule")
+    d = tmp_path / "designs" / "uart"
+    with patch("eda_studio.executors.synthesize.run_shell",
+               side_effect=subprocess.TimeoutExpired(cmd=["yosys"], timeout=600)):
+        r = synthesize_executor(make_ctx(d))
+    assert r["structured"]["success"] is False
+    assert r["output"] == "timeout"
+
+def test_simulate_timeout_returns_failure(tmp_path, monkeypatch):
+    """P2 #5: 直接 subprocess.run 抛 TimeoutExpired 时 simulate 返回 success=False。"""
+    import subprocess
+    monkeypatch.chdir(tmp_path)
+    rtl = tmp_path / "designs" / "uart" / "rtl"
+    rtl.mkdir(parents=True)
+    (rtl / "uart.v").write_text("module uart; endmodule")
+    (rtl / "tb_uart.v").write_text("x")
+    d = tmp_path / "designs" / "uart"
+    # run_shell 正常返回,但 sim_out 的 subprocess.run 超时
+    with patch("eda_studio.executors.simulate.run_shell",
+               return_value=fake_completed(returncode=0)), \
+         patch("eda_studio.executors.simulate.subprocess.run",
+               side_effect=subprocess.TimeoutExpired(cmd=["docker"], timeout=600)):
+        r = simulate_executor(make_ctx(d))
+    assert r["structured"]["success"] is False
+    assert r["output"] == "timeout"
+
+def test_pnr_timeout_returns_failure(tmp_path, monkeypatch):
+    import subprocess
+    monkeypatch.chdir(tmp_path)
+    d = tmp_path / "designs" / "uart"
+    (d / "synth").mkdir(parents=True)
+    (d / "synth" / "netlist.v").write_text("x")
+    with patch("eda_studio.executors.pnr.run_shell",
+               side_effect=subprocess.TimeoutExpired(cmd=["openroad"], timeout=600)):
+        r = pnr_executor(make_ctx(d))
+    assert r["structured"]["success"] is False
+    assert r["output"] == "timeout"
+
+def test_drc_timeout_returns_failure(tmp_path, monkeypatch):
+    import subprocess
+    monkeypatch.chdir(tmp_path)
+    d = tmp_path / "designs" / "uart" / "pnr"
+    d.mkdir(parents=True)
+    (d / "uart_pnr.def").write_text("x")
+    with patch("eda_studio.executors.drc.run_shell",
+               side_effect=subprocess.TimeoutExpired(cmd=["magic"], timeout=600)):
+        r = drc_executor({"context": {"design_dir": str(d.parent), "docker_config": DOCKER, "shell_config": SHELL}})
+    assert r["structured"]["success"] is False
+    assert r["output"] == "timeout"
+
+def test_gds_timeout_returns_failure(tmp_path, monkeypatch):
+    import subprocess
+    monkeypatch.chdir(tmp_path)
+    d = tmp_path / "designs" / "uart"
+    (d / "pnr").mkdir(parents=True)
+    (d / "pnr" / "uart_pnr.def").write_text("x")
+    with patch("eda_studio.executors.gds.run_shell",
+               side_effect=subprocess.TimeoutExpired(cmd=["klayout"], timeout=600)):
+        r = gds_executor(make_ctx(d))
+    assert r["structured"]["success"] is False
+    assert r["output"] == "timeout"

@@ -1,4 +1,5 @@
 """yosys 综合 executor。"""
+import subprocess
 from pathlib import Path
 from ..shell_safety import run_shell, to_container_path, ShellSafetyError
 
@@ -25,6 +26,8 @@ def synthesize_executor(ctx: dict) -> dict:
     try:
         result = run_shell(["yosys", "-q", "-p", script], cwd=synth_dir,
                            docker_config=docker_cfg, shell_config=shell_cfg)
+    except subprocess.TimeoutExpired:
+        return {"output": "timeout", "structured": {"success": False}}
     except ShellSafetyError as e:
         return {"output": str(e), "structured": {"success": False, "safety_error": True}}
 

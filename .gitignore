@@ -9,3 +9,5 @@ build/
 config.yaml
 designs/
 .venv/
+sessions
+.env

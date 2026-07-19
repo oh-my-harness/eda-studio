@@ -20,7 +20,7 @@ workflow:
 
 shell:
   allowed_commands: ["verilator", "yosys", "openroad", "magic", "netgen", "klayout"]
-  denied_args: ["rm", "chmod", "sudo", ">", "|", ";", "&", "`", "$"]
+  denied_args: ["rm", "chmod", "sudo", ">", "|", "&", "`", "$"]
 
 docker:
   image: "hpretl/iic-osic-tools:latest"

@@ -44,6 +44,8 @@ def simulate_executor(ctx: dict) -> dict:
             "bash", "-lc", "./sim_out",
         ]
         run_result = subprocess.run(run_docker_cmd, capture_output=True, text=True, timeout=600)
+    except subprocess.TimeoutExpired:
+        return {"output": "timeout", "structured": {"success": False}}
     except ShellSafetyError as e:
         return {"output": str(e), "structured": {"success": False, "safety_error": True}}
 

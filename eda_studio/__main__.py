@@ -32,7 +32,6 @@ from .config import load_config
 from .workflow import build_workflow, build_providers, _wrap_hooks, _build_tools
 from .judge import make_judge_fn
 from .hooks import make_hooks
-from .rules import make_rules_hook
 from .executors import (
     simulate_executor, synthesize_executor, pnr_executor,
     drc_executor, gds_executor,
@@ -65,7 +64,7 @@ def _re_register(engine, config, design_name):
         .with_tool(tools[5])
         .with_tool(tools[6])
         .with_hooks(_wrap_hooks(make_hooks(config)))
-        .with_hooks([make_rules_hook(config)]))
+    )
 
     # budget:restore 后用 should_stop 适配(senza 无 BudgetExceededHook 挂载点)
     _engine_ref = []

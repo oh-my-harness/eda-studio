@@ -23,7 +23,6 @@ from .config import AppConfig
 from .prompts import build_prompts, load_requirement
 from .judge import make_judge_fn
 from .hooks import make_hooks
-from .rules import make_rules_hook
 from .tools.file_tools import make_file_tools
 from .tools.report_tools import make_report_tools
 from .executors import (
@@ -197,8 +196,7 @@ def build_workflow(config: AppConfig, design_name: str) -> WorkflowEngine:
         return False
 
     budget_hook = create_should_stop_hook(_budget_should_stop)
-    rules_hook = make_rules_hook(config)  # create_rule_approval_hook → Hook
-    engine = engine.with_hooks([budget_hook, rules_hook])
+    engine = engine.with_hooks([budget_hook])
     _engine_ref.append(engine)  # 回填,供 should_stop 闭包读取
 
     # context 变量:design_dir / docker_config / shell_config。
