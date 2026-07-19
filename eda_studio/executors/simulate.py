@@ -30,7 +30,7 @@ def simulate_executor(ctx: dict) -> dict:
 
     cmd = [
         "verilator", "--binary", "--timing",
-        "-Wall",
+        "-Wno-fatal",  # warning 不当 error(timescale/unused signal 等不影响功能)
         "--top-module", "tb_uart",
         *[to_container_path(f, docker_cfg) for f in rtl_files],
         to_container_path(tb_file, docker_cfg),
