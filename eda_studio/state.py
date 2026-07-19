@@ -38,7 +38,7 @@ class AppState:
                 "task_id": None,
                 "total_cost": None,
                 "step_history": [],
-                "design": None,
+                "design": self.design_name,
             }
         try:
             cost = engine.total_cost().get("total_cost", 0.0)
@@ -59,8 +59,11 @@ class AppState:
         }
 
     def clear_active_task(self) -> None:
-        """清除任务相关句柄,下次任务从干净状态开始。"""
+        """清除任务运行时句柄(engine/iterator/task_id),保留 design_name。
+
+        design_name 保留是因为 workflow 完成后前端仍要按它取产物
+        (render.png / report)。engine 等句柄不可继续使用,必须清掉。
+        """
         self.engine = None
         self.event_iterator = None
         self.task_id = None
-        self.design_name = None

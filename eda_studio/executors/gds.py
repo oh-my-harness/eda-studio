@@ -1,7 +1,10 @@
 """klayout 导出 GDSII executor。
 
-klayout 用 ruby 脚本(-r),RBA::Layout API 先读 std cell GDS 再读 DEF,写 GDS。
-必须先读 std cell GDS,否则 DEF 引用的 cell 会被当成 dummy macro(空方框)。
+klayout 用 ruby 脚本(-r),RBA::Layout API 通过 LEFDEFReaderConfiguration
+读取 tech LEF + macro LEF + 标准单元 GDS + DEF,导出含真实版图的 GDS。
+
+必须用 LEFDEFReaderConfiguration,否则 DEF 的 component 不会被解析为
+instance,标准单元会变成独立 top cell(空方框,无真实版图)。
 """
 import subprocess
 from pathlib import Path
@@ -21,29 +24,39 @@ def gds_executor(ctx: dict) -> dict:
         return {"output": f"DEF 文件不存在: {def_file}",
                 "structured": {"success": False}}
 
-    # PDK 路径:标准单元 GDS(包含每个 cell 的真实版图)。
-    # 必须先于 DEF 读取,DEF 的 component 按 cell 名引用 GDS 中已加载的 cell。
+    # PDK 路径:tech LEF + macro LEF + 标准单元 GDS。
+    # LEFDEF reader 需要 LEF 把 DEF component 解析为 instance,
+    # macro_layout_files(GDS) 提供每个 cell 的真实版图。
     pdk_glob = "/foss/pdks/ciel/sky130/versions/*/sky130A/libs.ref/sky130_fd_sc_hd"
     find = subprocess.run(
         ["docker", "exec", docker_cfg.container, "bash", "-lc",
-         f"ls {pdk_glob}/gds/sky130_fd_sc_hd.gds"],
+         f"ls {pdk_glob}/techlef/sky130_fd_sc_hd__nom.tlef "
+         f"{pdk_glob}/lef/sky130_fd_sc_hd.lef "
+         f"{pdk_glob}/gds/sky130_fd_sc_hd.gds"],
         capture_output=True, text=True, timeout=30)
     paths = [p for p in find.stdout.strip().split("\n")
              if p and not p.startswith("[INFO")]
-    gds_lib_path = paths[0] if paths else ""
-    if not gds_lib_path:
-        return {"output": "PDK std cell GDS 未找到",
+    tlef_path = next((p for p in paths if p.endswith(".tlef")), "")
+    lef_path = next((p for p in paths if p.endswith("sky130_fd_sc_hd.lef")), "")
+    gds_lib_path = next((p for p in paths if p.endswith(".gds")), "")
+    if not tlef_path or not lef_path or not gds_lib_path:
+        return {"output": f"PDK 未找到: tlef={tlef_path} lef={lef_path} gds={gds_lib_path}",
                 "structured": {"success": False}}
 
     def_path = to_container_path(def_file, docker_cfg)
     gds_path = to_container_path(gds_out, docker_cfg)
-    # klayout ruby 脚本:先读 std cell GDS,再读 DEF。
-    # DEF 的 component 按 cell 名引用 GDS 中已加载的 cell,从而得到真实版图;
-    # 若不先读 GDS,klayout 会为每个 cell 创建 dummy macro(空方框)。
+    # LEFDEFReaderConfiguration: 配置 LEF 文件 + macro GDS,
+    # read_lef_with_def=true 让 read(DEF) 时一并加载 LEF。
+    # LoadLayoutOptions.lefdef_config= 绑定到 Layout.read(def, opts)。
     rb = f"""\
 ly = RBA::Layout.new
-ly.read("{gds_lib_path}")
-ly.read("{def_path}")
+cfg = RBA::LEFDEFReaderConfiguration.new
+cfg.lef_files = ["{tlef_path}", "{lef_path}"]
+cfg.macro_layout_files = ["{gds_lib_path}"]
+cfg.read_lef_with_def = true
+opts = RBA::LoadLayoutOptions.new
+opts.lefdef_config = cfg
+ly.read("{def_path}", opts)
 ly.write("{gds_path}")
 """
     rb_file = gds_dir / "stream.rb"
