@@ -10,7 +10,7 @@
 #
 # 前提：
 #   - ../Senza 是 Senza 仓库 checkout
-#   - ../llm-harness-runtime 是 runtime 仓库 checkout（或能联网 fetch）
+#   - 能联网 fetch runtime（Senza 的 Cargo.toml 用 git rev 锁定 runtime commit，从 GitHub fetch）
 #   - 当前 venv 已装 maturin
 set -euo pipefail
 
