@@ -4,7 +4,7 @@
 
 EDA Studio 是基于 [Senza](https://github.com/oh-my-harness/Senza) SDK 的开源 EDA 自动化芯片设计项目，完成 RTL→GDS 全流程。独立仓库，通过 `pip install senza-sdk` 引入依赖。
 
-设计文档：`../Senza/docs/superpowers/specs/2026-07-18-eda-studio-design.md`
+设计文档：[`docs/eda-studio-design.md`](docs/eda-studio-design.md)
 
 ## Docker 容器使用方法
 
@@ -144,7 +144,7 @@ senza.create_rule_approval_hook(chain: RuleChain)   # impl BeforeToolCallHook
 
 - Senza 源码：`../Senza/`（同级目录 `oh-my-harness/Senza`）
 - 本项目是 Senza 的**消费者**，不修改 Senza 源码
-- 设计文档存放在 Senza 仓库：`../Senza/docs/superpowers/specs/2026-07-18-eda-studio-design.md`
+- 设计文档存放在本仓库：`docs/eda-studio-design.md`
 - 如需调试 Senza 本身，在 Senza 仓库的 `.venv` 中 `pip install -e .`
 
 ---
