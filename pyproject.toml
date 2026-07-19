@@ -1,0 +1,19 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.backends._legacy:_Backend"
+
+[project]
+name = "eda-studio"
+version = "0.1.0"
+description = "RTL→GDS automated chip design using Senza SDK and open-source EDA tools"
+requires-python = ">=3.9"
+dependencies = [
+    "senza-sdk>=0.4.0",
+    "pyyaml>=6.0",
+]
+
+[project.scripts]
+eda-studio = "eda_studio.__main__:main"
+
+[tool.setuptools.packages.find]
+include = ["eda_studio*"]

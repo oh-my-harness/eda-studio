@@ -1,0 +1,54 @@
+# EDA Studio Configuration
+# Copy to config.yaml and fill in your API keys
+
+providers:
+  - type: openai
+    api_key: ${OPENAI_API_KEY}
+    models: ["gpt-4o", "gpt-4o-mini"]
+  - type: anthropic
+    api_key: ${ANTHROPIC_API_KEY}
+    models: ["claude-3-5-sonnet-*"]
+  - type: openai  # DeepSeek via OpenAI-compatible API
+    api_key: ${DEEPSEEK_API_KEY}
+    base_url: "https://api.deepseek.com"
+    models: ["deepseek-*"]
+
+pricing:
+  gpt-4o:
+    input_per_mtok: 2.5
+    output_per_mtok: 10.0
+  deepseek-chat:
+    input_per_mtok: 0.14
+    output_per_mtok: 0.28
+
+agents:
+  rtl_design:
+    model: "gpt-4o"
+    max_tokens: 4096
+    temperature: 0.3
+  debug_fix:
+    model: "deepseek-chat"
+    max_tokens: 4096
+    temperature: 0.2
+  drc_fix:
+    model: "claude-3-5-sonnet-20241022"
+    max_tokens: 4096
+
+budget:
+  limit: 5.0            # max cost in USD
+  exceeded_action: stop  # stop | continue
+
+workflow:
+  max_steps: 50
+  max_retries: 3        # max retries per repair loop
+
+rules:
+  shell:
+    allowed_commands: ["verilator", "yosys", "openroad", "magic", "netgen", "klayout"]
+    denied_args: ["rm", "chmod", "sudo", ">", "|"]
+
+docker:
+  image: "hpretl/iic-osic-tools:latest"
+  container: "eda-tools"
+  workdir: "/work/designs"   # mount point inside container
+  pdk: "sky130A"             # pre-installed PDK
