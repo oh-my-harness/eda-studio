@@ -36,6 +36,7 @@ _REPORT_PATHS = {
     "pnr": "pnr/report.txt",
     "drc": "pnr/drc.rpt",
     "gds": "gds/report.txt",
+    "render": "gds/uart.png",
 }
 
 
@@ -123,6 +124,17 @@ def create_app(
         if not path.is_file():
             return PlainTextResponse(f"report not found: {rel}", status_code=404)
         return PlainTextResponse(path.read_text())
+
+    # ── GET /api/render.png ─────────────────────────────────────
+    @app.get("/api/render.png")
+    async def get_render_png():
+        """返回 render step 产出的 PNG 预览图。"""
+        if not state.design_name:
+            return PlainTextResponse("no active design", status_code=404)
+        path = Path(f"designs/{state.design_name}") / "gds" / "uart.png"
+        if not path.is_file():
+            return PlainTextResponse("render not found", status_code=404)
+        return FileResponse(path, media_type="image/png")
 
     # ── GET /api/file/{path:path} ───────────────────────────────
     @app.get("/api/file/{file_path:path}")

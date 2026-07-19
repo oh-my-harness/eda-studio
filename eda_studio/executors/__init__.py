@@ -4,5 +4,6 @@ from .synthesize import synthesize_executor
 from .pnr import pnr_executor
 from .drc import drc_executor
 from .gds import gds_executor
+from .render import render_executor
 
-__all__ = ["simulate_executor", "synthesize_executor", "pnr_executor", "drc_executor", "gds_executor"]
+__all__ = ["simulate_executor", "synthesize_executor", "pnr_executor", "drc_executor", "gds_executor", "render_executor"]

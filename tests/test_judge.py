@@ -115,9 +115,14 @@ def test_drc_fail_to_drc_fix():
     judge = make_judge_fn(make_config())
     assert judge(ctx("drc", success=False)) == "to:drc_fix"
 
-def test_gds_done():
+def test_gds_to_render():
     judge = make_judge_fn(make_config())
-    assert judge(ctx("gds", success=True)) == "abort:done"
+    assert judge(ctx("gds", success=True)) == "to:render"
+    assert judge(ctx("gds", success=False)) == "abort:done"
+
+def test_render_done():
+    judge = make_judge_fn(make_config())
+    assert judge(ctx("render", success=True)) == "abort:done"
 
 def test_unknown_step_aborts():
     judge = make_judge_fn(make_config())

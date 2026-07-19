@@ -39,6 +39,7 @@
         }
         .flow-node.pending { opacity: 0.5; }
         .flow-node.active { border-left-color: #e94560; background: #1f2a4a; opacity: 1; }
+        .flow-node.view { box-shadow: 0 0 0 2px #58a6ff inset; }
         .flow-node.done { border-left-color: #4ecca3; opacity: 0.8; }
         .flow-node.failed { border-left-color: #ff4444; }
         .flow-node-icon { font-size: 18px; }
@@ -114,6 +115,8 @@
         const latestCardId = {};
         let currentStepId = null;
         let totalCost = 0;
+        let viewStepId = null;  // center-col 当前显示的 step
+        const stepStore = {};   // sid → { round, lines: [{text,cls}], output, cost, finished, success }
 
         const stepConfig = {
             rtl_tx:      { name: 'UART 发送器',  icon: '📤', desc: '设计 uart_tx.v',   type: 'LLM' },
@@ -126,8 +129,9 @@
             drc_fix:     { name: 'DRC 修复',     icon: '🔧', desc: '修复 DRC 违规',    type: 'LLM' },
             drc:         { name: 'DRC 检查',     icon: '✅', desc: 'Magic DRC',       type: 'EXEC' },
             gds:         { name: 'GDS 导出',     icon: '📦', desc: '导出 GDS',         type: 'EXEC' },
+            render:      { name: '渲染预览',     icon: '🖼️', desc: 'GDS → PNG',       type: 'EXEC' },
         };
-        const stepOrder = ['rtl_tx', 'rtl_rx', 'rtl_top', 'simulate', 'debug_fix', 'synthesize', 'pnr', 'drc_fix', 'drc', 'gds'];
+        const stepOrder = ['rtl_tx', 'rtl_rx', 'rtl_top', 'simulate', 'debug_fix', 'synthesize', 'pnr', 'drc_fix', 'drc', 'gds', 'render'];
 
         function buildFlowchart() {
             const c = document.getElementById('left-col');
@@ -137,6 +141,8 @@
                 const n = document.createElement('div');
                 n.className = 'flow-node pending';
                 n.id = 'node-' + id;
+                n.onclick = () => showStep(id);
+                n.style.cursor = 'pointer';
                 const badge = cfg.type === 'LLM'
                     ? '<span class="type-badge type-llm">LLM</span>'
                     : '<span class="type-badge type-exec">EXEC</span>';
@@ -150,23 +156,35 @@
             stepOrder.forEach(id => {
                 const n = document.getElementById('node-' + id);
                 n.className = 'flow-node pending';
+                n.dataset.done = '';
+                n.dataset.failed = '';
+                delete stepStore[id];
             });
+            viewStepId = null;
+            document.getElementById('center-col').innerHTML = '<div class="center-empty"><div class="big-icon">🔧</div><div class="hint">输入设计名,点击运行开始 EDA 流程</div></div>';
         }
 
         function setActiveNode(id) {
             stepOrder.forEach(sid => {
                 const n = document.getElementById('node-' + sid);
-                if (sid === id) n.className = 'flow-node active';
-                else if (!n.className.includes('done')) n.className = 'flow-node pending';
+                let cls = 'flow-node';
+                if (sid === id) cls += ' active';
+                if (sid === viewStepId) cls += ' view';
+                if (n.dataset.done === '1') cls += ' done';
+                if (n.dataset.failed === '1') cls += ' failed';
+                if (sid !== id && sid !== viewStepId && n.dataset.done !== '1' && n.dataset.failed !== '1') cls += ' pending';
+                n.className = cls;
             });
         }
         function setDoneNode(id) {
             const n = document.getElementById('node-' + id);
-            if (n) n.className = 'flow-node done';
+            if (n) { n.dataset.done = '1'; }
+            setActiveNode(currentStepId);
         }
         function setFailedNode(id) {
             const n = document.getElementById('node-' + id);
-            if (n) n.className = 'flow-node failed';
+            if (n) { n.dataset.failed = '1'; }
+            setActiveNode(currentStepId);
         }
 
         function setStatusBadge(state, text) {
@@ -302,57 +320,87 @@
             }
         }
 
+        function _ensureStore(sid) {
+            if (!stepStore[sid]) {
+                stepStore[sid] = { round: 0, lines: [], output: '', cost: null, finished: false, success: null };
+            }
+            return stepStore[sid];
+        }
+
         function initCenterForStep(sid) {
-            const center = document.getElementById('center-col');
-            const cfg = stepConfig[sid] || { name: sid, icon: '🔹', desc: '' };
-            center.innerHTML = `
-                <div class="step-card" id="card-${sid}-${stepRound[sid]}">
-                    <div class="step-card-header">
-                        <span class="step-card-icon">${cfg.icon}</span>
-                        <span class="step-card-name">${cfg.name}</span>
-                        ${stepRound[sid] > 1 ? `<span class="step-card-round">round ${stepRound[sid]}</span>` : ''}
-                        <span class="spinner"></span>
-                    </div>
-                    <div class="step-output" id="output-${sid}-${stepRound[sid]}"></div>
-                </div>`;
-            latestCardId[sid] = `${sid}-${stepRound[sid]}`;
+            const s = _ensureStore(sid);
+            s.round = stepRound[sid];
+            s.lines = [];
+            s.output = '';
+            s.cost = null;
+            s.finished = false;
+            s.success = null;
+            viewStepId = sid;
+            setActiveNode(sid);
+            renderStepView(sid);
         }
 
         function appendStepOutput(sid, text, cls) {
-            const cardId = latestCardId[sid];
-            if (!cardId) return;
-            const el = document.getElementById('output-' + cardId);
-            if (!el) return;
-            const line = document.createElement('div');
-            line.className = 'tool-line ' + (cls || '');
-            line.textContent = text;
-            el.appendChild(line);
-            el.scrollTop = el.scrollHeight;
+            const s = _ensureStore(sid);
+            s.lines.push({ text, cls: cls || '' });
+            if (sid === viewStepId) renderStepView(sid);
         }
 
         function updateStepCardFinished(sid, output, cost) {
-            const cardId = latestCardId[sid];
-            if (!cardId) return;
-            const card = document.getElementById('card-' + cardId);
-            if (!card) return;
-            // 移除 spinner
-            const spinner = card.querySelector('.spinner');
-            if (spinner) spinner.remove();
-            // 显示 output 摘要
-            if (output) {
-                const preview = output.length > 500 ? output.slice(0, 500) + '...' : output;
-                appendStepOutput(sid, '\n--- 输出 ---\n' + preview);
+            const s = _ensureStore(sid);
+            s.output = output || '';
+            s.cost = cost;
+            s.finished = true;
+            // LLM step:无 structured.success;EXEC step:从 structured 判断
+            // (event 里 structured 在 output 同级,但目前 step_finished event 只传 output/cost,
+            //  success 从 output 非空推断对 EXEC step 够用)
+            s.success = true;
+            if (sid === viewStepId) renderStepView(sid);
+        }
+
+        function renderStepView(sid) {
+            const center = document.getElementById('center-col');
+            const cfg = stepConfig[sid] || { name: sid, icon: '🔹', desc: '' };
+            const s = _ensureStore(sid);
+            const linesHtml = s.lines.map(l =>
+                `<div class="tool-line ${l.cls}">${escapeHtml(l.text)}</div>`
+            ).join('');
+            let extra = '';
+            // output 摘要
+            if (s.output) {
+                const preview = s.output.length > 2000 ? s.output.slice(0, 2000) + '\n...(截断)' : s.output;
+                extra += `<div class="tool-line">--- 输出 ---</div><div class="tool-line">${escapeHtml(preview)}</div>`;
             }
-            // 报告链接(对应 step 有报告文件)
+            // 报告链接
             const reportSteps = ['simulate', 'synthesize', 'pnr', 'drc', 'gds'];
-            if (reportSteps.includes(sid)) {
-                const link = document.createElement('a');
-                link.className = 'report-link';
-                link.href = `/api/report/${sid}`;
-                link.target = '_blank';
-                link.textContent = '查看完整报告 →';
-                card.appendChild(link);
+            if (reportSteps.includes(sid) && s.finished) {
+                extra += `<a class="report-link" href="/api/report/${sid}" target="_blank">查看完整报告 →</a>`;
             }
+            // render step:PNG
+            if (sid === 'render' && s.finished) {
+                extra += `<img src="/api/render.png?t=${Date.now()}" alt="GDS 渲染预览" style="width:100%;margin-top:12px;border:1px solid #0f3460;border-radius:6px;background:#fff;">`;
+            }
+            // cost
+            let meta = '';
+            if (s.cost && s.cost.input_tokens > 0) meta = `<div class="step-meta">${s.cost.input_tokens}↓ ${s.cost.output_tokens}↑ $${(s.cost.total_cost||0).toFixed(4)}</div>`;
+            const spinner = s.finished ? '' : '<span class="spinner"></span>';
+            center.innerHTML = `
+                <div class="step-card">
+                    <div class="step-card-header">
+                        <span class="step-card-icon">${cfg.icon}</span>
+                        <span class="step-card-name">${cfg.name}</span>
+                        ${s.round > 1 ? `<span class="step-card-round">round ${s.round}</span>` : ''}
+                        ${spinner}
+                    </div>
+                    <div class="step-output">${linesHtml}${extra}</div>
+                    ${meta}
+                </div>`;
+        }
+
+        function showStep(sid) {
+            viewStepId = sid;
+            setActiveNode(currentStepId);
+            renderStepView(sid);
         }
 
         function escapeHtml(s) {

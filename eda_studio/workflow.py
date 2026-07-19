@@ -28,7 +28,7 @@ from .tools.file_tools import make_file_tools
 from .tools.report_tools import make_report_tools
 from .executors import (
     simulate_executor, synthesize_executor, pnr_executor,
-    drc_executor, gds_executor,
+    drc_executor, gds_executor, render_executor,
 )
 
 
@@ -129,6 +129,7 @@ def build_workflow(config: AppConfig, design_name: str) -> WorkflowEngine:
              "allowed_tools": ["read_drc_report", "read_sdc", "write_sdc", "read_rtl", "write_rtl"]},
             {"id": "drc", "name": "DRC 检查", "executor": "drc"},
             {"id": "gds", "name": "GDS 导出", "executor": "gds"},
+            {"id": "render", "name": "渲染预览", "executor": "render"},
         ],
         # edges 覆盖 judge 所有 to: 目标:
         # rtl_tx→rtl_rx, rtl_rx→rtl_top, rtl_top→simulate,
@@ -149,6 +150,7 @@ def build_workflow(config: AppConfig, design_name: str) -> WorkflowEngine:
             {"from": "drc_fix", "to": "pnr"},
             {"from": "drc", "to": "gds"},
             {"from": "drc", "to": "drc_fix"},
+            {"from": "gds", "to": "render"},
         ],
     }
 
@@ -166,6 +168,7 @@ def build_workflow(config: AppConfig, design_name: str) -> WorkflowEngine:
         .with_executor("pnr", create_executor(pnr_executor))
         .with_executor("drc", create_executor(drc_executor))
         .with_executor("gds", create_executor(gds_executor))
+        .with_executor("render", create_executor(render_executor))
         .with_executor("shell", create_shell_executor(["echo", "python3"]))
         # 7 个 tool(从 _build_tools 拿已构建好的 Tool 对象)
         .with_tool(tool_specs[0])
