@@ -57,18 +57,16 @@ def _wrap_hooks(raw_hooks):
     ]
 
 
-def build_workflow(config: AppConfig, design_name: str) -> WorkflowEngine:
-    """构建 WorkflowEngine:8 个 step + edges + executors + tools + hooks + budget + rules。"""
-    design_dir = Path(f"designs/{design_name}")
-    requirement = load_requirement(design_name)
-    prompts = build_prompts(requirement)
-    provider, pricing = build_providers(config)
+def _build_tools(design_dir: Path) -> list:
+    """构建 7 个 EDA tool(write/read/list + report + sdc)的 Tool 对象。
 
+    用于 build_workflow 初始构建与 _re_register restore 后重注册:
+    WorkflowEngine.restore 清空 extra_tools,需重新 with_tool 注册。
+    """
     file_tools = make_file_tools(design_dir)
     report_tools = make_report_tools(design_dir)
 
-    # tool 参数 schema(简化的 JSON schema)。create_tool 要求 JSON 字符串。
-    WRITE_RTL_SCHEMA = json.dumps({
+    write_rtl_schema = json.dumps({
         "type": "object",
         "properties": {
             "filename": {"type": "string", "description": "文件名,如 uart_tx.v"},
@@ -76,17 +74,37 @@ def build_workflow(config: AppConfig, design_name: str) -> WorkflowEngine:
         },
         "required": ["filename", "content"],
     })
-    READ_RTL_SCHEMA = json.dumps({
+    read_rtl_schema = json.dumps({
         "type": "object",
         "properties": {"filename": {"type": "string"}},
         "required": ["filename"],
     })
-    NO_ARG_SCHEMA = json.dumps({"type": "object", "properties": {}})
-    WRITE_SDC_SCHEMA = json.dumps({
+    no_arg_schema = json.dumps({"type": "object", "properties": {}})
+    write_sdc_schema = json.dumps({
         "type": "object",
         "properties": {"content": {"type": "string"}},
         "required": ["content"],
     })
+
+    return [
+        create_tool("write_rtl", "写 Verilog 文件", write_rtl_schema, file_tools["write_rtl"]),
+        create_tool("read_rtl", "读 Verilog 文件", read_rtl_schema, file_tools["read_rtl"]),
+        create_tool("list_design_files", "列出工作区文件", no_arg_schema, file_tools["list_design_files"]),
+        create_tool("read_sim_report", "读仿真报告", no_arg_schema, report_tools["read_sim_report"]),
+        create_tool("read_drc_report", "读 DRC 报告", no_arg_schema, report_tools["read_drc_report"]),
+        create_tool("read_sdc", "读时序约束", no_arg_schema, file_tools["read_sdc"]),
+        create_tool("write_sdc", "写时序约束", write_sdc_schema, file_tools["write_sdc"]),
+    ]
+
+
+def build_workflow(config: AppConfig, design_name: str) -> WorkflowEngine:
+    """构建 WorkflowEngine:8 个 step + edges + executors + tools + hooks + budget + rules。"""
+    design_dir = Path(f"designs/{design_name}")
+    requirement = load_requirement(design_name)
+    prompts = build_prompts(requirement)
+    provider, pricing = build_providers(config)
+
+    tool_specs = _build_tools(design_dir)
 
     workflow_dict = {
         "entry_step": "rtl_design",
@@ -140,14 +158,14 @@ def build_workflow(config: AppConfig, design_name: str) -> WorkflowEngine:
         .with_executor("drc", create_executor(drc_executor))
         .with_executor("gds", create_executor(gds_executor))
         .with_executor("shell", create_shell_executor(["echo", "python3"]))
-        # 7 个 tool(闭包从 make_file_tools / make_report_tools 拿)
-        .with_tool(create_tool("write_rtl", "写 Verilog 文件", WRITE_RTL_SCHEMA, file_tools["write_rtl"]))
-        .with_tool(create_tool("read_rtl", "读 Verilog 文件", READ_RTL_SCHEMA, file_tools["read_rtl"]))
-        .with_tool(create_tool("list_design_files", "列出工作区文件", NO_ARG_SCHEMA, file_tools["list_design_files"]))
-        .with_tool(create_tool("read_sim_report", "读仿真报告", NO_ARG_SCHEMA, report_tools["read_sim_report"]))
-        .with_tool(create_tool("read_drc_report", "读 DRC 报告", NO_ARG_SCHEMA, report_tools["read_drc_report"]))
-        .with_tool(create_tool("read_sdc", "读时序约束", NO_ARG_SCHEMA, file_tools["read_sdc"]))
-        .with_tool(create_tool("write_sdc", "写时序约束", WRITE_SDC_SCHEMA, file_tools["write_sdc"]))
+        # 7 个 tool(从 _build_tools 拿已构建好的 Tool 对象)
+        .with_tool(tool_specs[0])
+        .with_tool(tool_specs[1])
+        .with_tool(tool_specs[2])
+        .with_tool(tool_specs[3])
+        .with_tool(tool_specs[4])
+        .with_tool(tool_specs[5])
+        .with_tool(tool_specs[6])
         .with_hooks(_wrap_hooks(make_hooks(config)))
         .with_task_store(f"designs/{design_name}/.taskstore")
         .with_max_steps(config.workflow_config.max_steps)

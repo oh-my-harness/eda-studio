@@ -29,11 +29,10 @@ from senza import (
     create_should_stop_hook, create_shell_executor,
 )
 from .config import load_config
-from .workflow import build_workflow, build_providers, _wrap_hooks
+from .workflow import build_workflow, build_providers, _wrap_hooks, _build_tools
 from .judge import make_judge_fn
 from .hooks import make_hooks
 from .rules import make_rules_hook
-from .budget import make_budget_cb
 from .executors import (
     simulate_executor, synthesize_executor, pnr_executor,
     drc_executor, gds_executor,
@@ -41,12 +40,15 @@ from .executors import (
 
 
 def _re_register(engine, config, design_name):
-    """restore 后重新注册 executors/hooks/context 变量。
+    """restore 后重新注册 executors/hooks/tools/context 变量。
 
     WorkflowEngine.restore 只恢复 workflow 定义与 taskstore 状态,
-    不恢复 with_executor/with_hooks/set_context_variable 的注册,
-    需在此重新挂载。
+    不恢复 with_executor/with_tool/with_hooks/set_context_variable 的注册,
+    且 restore 会清空 extra_tools(engine.rs:491/561 extra_tools: vec![]),
+    需在此重新挂载——否则 LLM step 的 allowed_tools 找不到 tool 实现。
     """
+    design_dir = Path(f"designs/{design_name}")
+    tools = _build_tools(design_dir)
     engine = (engine
         .with_executor("simulate", create_executor(simulate_executor))
         .with_executor("synthesize", create_executor(synthesize_executor))
@@ -54,6 +56,14 @@ def _re_register(engine, config, design_name):
         .with_executor("drc", create_executor(drc_executor))
         .with_executor("gds", create_executor(gds_executor))
         .with_executor("shell", create_shell_executor(["echo", "python3"]))
+        # restore 清空 extra_tools,需重新注册 7 个 tool
+        .with_tool(tools[0])
+        .with_tool(tools[1])
+        .with_tool(tools[2])
+        .with_tool(tools[3])
+        .with_tool(tools[4])
+        .with_tool(tools[5])
+        .with_tool(tools[6])
         .with_hooks(_wrap_hooks(make_hooks(config)))
         .with_hooks([make_rules_hook(config)]))
 
