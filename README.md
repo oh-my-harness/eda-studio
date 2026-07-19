@@ -22,9 +22,9 @@ docker run -d --name eda-tools -v $(pwd)/designs:/work/designs \
 eda-studio check
 
 # 5. 运行
-python -m eda_studio run uart
+eda-studio run uart
 # 或启动 Web UI
-python -m eda_studio serve --port 3000
+eda-studio serve --port 3000
 ```
 
 ## 模型要求
@@ -51,7 +51,7 @@ python -m eda_studio serve --port 3000
 
 ## Web UI
 
-`python -m eda_studio serve` 启动后,浏览器访问 `http://localhost:3000`:
+`eda-studio serve` 启动后,浏览器访问 `http://localhost:3000`:
 
 - 左栏:11 步 workflow 流程图(rtl_tx → ... → gds → render),实时高亮当前 step,LLM/EXEC 类型标签
 - 中栏:当前 step 的工具调用和输出,点击任意已完成 step 可回看
