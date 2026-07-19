@@ -127,6 +127,7 @@
             drc:         { name: 'DRC 检查',     icon: '✅', desc: 'Magic DRC',       type: 'EXEC' },
             gds:         { name: 'GDS 导出',     icon: '📦', desc: '导出 GDS',         type: 'EXEC' },
         };
+        const stepOrder = ['rtl_tx', 'rtl_rx', 'rtl_top', 'simulate', 'debug_fix', 'synthesize', 'pnr', 'drc_fix', 'drc', 'gds'];
 
         function buildFlowchart() {
             const c = document.getElementById('left-col');
@@ -143,6 +144,7 @@
                 c.appendChild(n);
             });
         }
+        buildFlowchart();
 
         function resetFlowchart() {
             stepOrder.forEach(id => {
