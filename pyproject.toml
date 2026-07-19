@@ -19,6 +19,6 @@ eda-studio = "eda_studio.__main__:main"
 [build-system]
 requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
-
 [tool.setuptools]
-packages = ["eda_studio", "eda_studio.tools", "eda_studio.executors"]
+packages = ["eda_studio", "eda_studio.tools", "eda_studio.executors", "eda_studio.templates"]
+include-package-data = true
