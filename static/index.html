@@ -44,7 +44,9 @@
         .flow-node-icon { font-size: 18px; }
         .flow-node-info { flex: 1; }
         .flow-node-name { font-size: 13px; font-weight: 600; }
-        .flow-node-desc { font-size: 11px; color: #888; }
+        .type-badge { font-size: 9px; font-weight: 700; padding: 1px 5px; border-radius: 3px; margin-left: 4px; vertical-align: middle; }
+        .type-llm { background: #4ecca3; color: #0d1117; }
+        .type-exec { background: #58a6ff; color: #0d1117; }
         .center-empty { text-align: center; margin-top: 80px; color: #555; }
         .big-icon { font-size: 48px; margin-bottom: 12px; }
         .hint { font-size: 14px; }
@@ -114,18 +116,17 @@
         let totalCost = 0;
 
         const stepConfig = {
-            rtl_tx:      { name: 'UART 发送器',  icon: '📤', desc: '设计 uart_tx.v' },
-            rtl_rx:      { name: 'UART 接收器',  icon: '📥', desc: '设计 uart_rx.v' },
-            rtl_top:     { name: '顶层模块',     icon: '🔗', desc: '设计 uart.v' },
-            simulate:    { name: '仿真验证',     icon: '🔬', desc: 'Verilator 仿真' },
-            debug_fix:   { name: '仿真修复',     icon: '🛠️', desc: '分析报告修复 RTL' },
-            synthesize:  { name: '逻辑综合',     icon: '⚙️', desc: 'Yosys 综合' },
-            pnr:         { name: '布局布线',     icon: '📐', desc: 'OpenROAD PnR' },
-            drc_fix:     { name: 'DRC 修复',     icon: '🔧', desc: '修复 DRC 违规' },
-            drc:         { name: 'DRC 检查',     icon: '✅', desc: 'Magic DRC' },
-            gds:         { name: 'GDS 导出',     icon: '📦', desc: '导出 GDS' },
+            rtl_tx:      { name: 'UART 发送器',  icon: '📤', desc: '设计 uart_tx.v',   type: 'LLM' },
+            rtl_rx:      { name: 'UART 接收器',  icon: '📥', desc: '设计 uart_rx.v',   type: 'LLM' },
+            rtl_top:     { name: '顶层模块',     icon: '🔗', desc: '设计 uart.v',      type: 'LLM' },
+            simulate:    { name: '仿真验证',     icon: '🔬', desc: 'Verilator 仿真',  type: 'EXEC' },
+            debug_fix:   { name: '仿真修复',     icon: '🛠️', desc: '分析报告修复 RTL', type: 'LLM' },
+            synthesize:  { name: '逻辑综合',     icon: '⚙️', desc: 'Yosys 综合',      type: 'EXEC' },
+            pnr:         { name: '布局布线',     icon: '📐', desc: 'OpenROAD PnR',    type: 'EXEC' },
+            drc_fix:     { name: 'DRC 修复',     icon: '🔧', desc: '修复 DRC 违规',    type: 'LLM' },
+            drc:         { name: 'DRC 检查',     icon: '✅', desc: 'Magic DRC',       type: 'EXEC' },
+            gds:         { name: 'GDS 导出',     icon: '📦', desc: '导出 GDS',         type: 'EXEC' },
         };
-        const stepOrder = ['rtl_tx', 'rtl_rx', 'rtl_top', 'simulate', 'debug_fix', 'synthesize', 'pnr', 'drc_fix', 'drc', 'gds'];
 
         function buildFlowchart() {
             const c = document.getElementById('left-col');
@@ -135,11 +136,13 @@
                 const n = document.createElement('div');
                 n.className = 'flow-node pending';
                 n.id = 'node-' + id;
-                n.innerHTML = `<span class="flow-node-icon">${cfg.icon}</span><div class="flow-node-info"><div class="flow-node-name">${cfg.name}</div><div class="flow-node-desc">${cfg.desc}</div></div>`;
+                const badge = cfg.type === 'LLM'
+                    ? '<span class="type-badge type-llm">LLM</span>'
+                    : '<span class="type-badge type-exec">EXEC</span>';
+                n.innerHTML = `<span class="flow-node-icon">${cfg.icon}</span><div class="flow-node-info"><div class="flow-node-name">${cfg.name} ${badge}</div><div class="flow-node-desc">${cfg.desc}</div></div>`;
                 c.appendChild(n);
             });
         }
-        buildFlowchart();
 
         function resetFlowchart() {
             stepOrder.forEach(id => {
