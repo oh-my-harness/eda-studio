@@ -9,7 +9,7 @@ def _parse_verilator_output(stderr: str, stdout: str) -> str:
 
 
 def simulate_executor(ctx: dict) -> dict:
-    """verilator 仿真。tb_uart.v 是预置 fixture,rtl_files 排除它。
+    """verilator 仿真。tb_<top>.v 是预置 fixture,rtl_files 排除它。
 
     两步:
     1. verilator --binary 编译走 run_shell(白名单校验),产出 sim_out 二进制。
@@ -21,17 +21,20 @@ def simulate_executor(ctx: dict) -> dict:
     shell_cfg = ctx["context"]["shell_config"]
 
     from ..shell_safety import _as_docker_config
+    from ..design_config import load_design_config
     docker_cfg = _as_docker_config(docker_cfg)
+    dcfg = load_design_config(design_dir)
 
-    rtl_files = [f for f in (design_dir / "rtl").glob("*.v") if f.name != "tb_uart.v"]
-    tb_file = design_dir / "rtl" / "tb_uart.v"
+    tb_filename = f"{dcfg.tb_module}.v"
+    rtl_files = [f for f in (design_dir / "rtl").glob("*.v") if f.name != tb_filename]
+    tb_file = design_dir / "rtl" / tb_filename
     if not tb_file.exists():
-        return {"output": "testbench 缺失: tb_uart.v", "structured": {"success": False}}
+        return {"output": f"testbench 缺失: {tb_filename}", "structured": {"success": False}}
 
     cmd = [
         "verilator", "--binary", "--timing",
         "-Wno-fatal",  # warning 不当 error(timescale/unused signal 等不影响功能)
-        "--top-module", "tb_uart",
+        "--top-module", dcfg.tb_module,
         *[to_container_path(f, docker_cfg) for f in rtl_files],
         to_container_path(tb_file, docker_cfg),
         "-o", "sim_out",

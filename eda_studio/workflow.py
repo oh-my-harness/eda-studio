@@ -98,63 +98,71 @@ def _build_tools(design_dir: Path) -> list:
 
 
 def build_workflow(config: AppConfig, design_name: str) -> WorkflowEngine:
-    """构建 WorkflowEngine:10 个 step + edges + executors + tools + hooks + budget + rules。"""
+    """构建 WorkflowEngine:根据 design_config 动态生成 steps + edges。"""
     design_dir = Path(f"designs/{design_name}")
     requirement = load_requirement(design_name)
-    prompts = build_prompts(requirement)
+    from .design_config import load_design_config
+    dcfg = load_design_config(design_dir)
+    prompts = build_prompts(requirement, dcfg.modules)
     provider, pricing = build_providers(config)
 
     tool_specs = _build_tools(design_dir)
 
+    # 动态生成 rtl steps(每个模块一个)+ 固定 executor/fix steps
+    rtl_steps = []
+    for m in dcfg.modules:
+        sid = f"rtl_{m.id}"
+        rtl_steps.append({
+            "id": sid, "name": m.name,
+            "prompt": prompts[sid],
+            "allowed_tools": ["write_rtl", "read_rtl", "list_design_files"],
+        })
+    fixed_steps = [
+        {"id": "simulate", "name": "仿真验证", "executor": "simulate"},
+        {"id": "debug_fix", "name": "仿真修复",
+         "prompt": prompts["debug_fix"],
+         "allowed_tools": ["read_sim_report", "read_rtl", "write_rtl"]},
+        {"id": "synthesize", "name": "逻辑综合", "executor": "synthesize"},
+        {"id": "pnr", "name": "布局布线", "executor": "pnr"},
+        {"id": "drc_fix", "name": "DRC 修复",
+         "prompt": prompts["drc_fix"],
+         "allowed_tools": ["read_drc_report", "read_sdc", "write_sdc", "read_rtl", "write_rtl"]},
+        {"id": "drc", "name": "DRC 检查", "executor": "drc"},
+        {"id": "gds", "name": "GDS 导出", "executor": "gds"},
+        {"id": "render", "name": "渲染预览", "executor": "render"},
+    ]
+    all_steps = rtl_steps + fixed_steps
+    rtl_ids = dcfg.rtl_step_ids
+
+    # 动态生成 edges:
+    # rtl_0→rtl_1→...→rtl_last→simulate
+    # simulate→synthesize/debug_fix, debug_fix→simulate
+    # synthesize→pnr/debug_fix, pnr→drc/drc_fix, drc_fix→pnr, drc→gds/drc_fix, gds→render
+    edges = []
+    for i in range(len(rtl_ids) - 1):
+        edges.append({"from": rtl_ids[i], "to": rtl_ids[i + 1]})
+    edges.append({"from": rtl_ids[-1], "to": "simulate"})
+    edges.extend([
+        {"from": "simulate", "to": "synthesize"},
+        {"from": "simulate", "to": "debug_fix"},
+        {"from": "debug_fix", "to": "simulate"},
+        {"from": "synthesize", "to": "pnr"},
+        {"from": "synthesize", "to": "debug_fix"},
+        {"from": "pnr", "to": "drc"},
+        {"from": "pnr", "to": "drc_fix"},
+        {"from": "drc_fix", "to": "pnr"},
+        {"from": "drc", "to": "gds"},
+        {"from": "drc", "to": "drc_fix"},
+        {"from": "gds", "to": "render"},
+    ])
+
     workflow_dict = {
-        "entry_step": "rtl_tx",
-        "steps": [
-            {"id": "rtl_tx", "name": "UART 发送器设计",
-             "prompt": prompts["rtl_tx"],
-             "allowed_tools": ["write_rtl", "read_rtl", "list_design_files"]},
-            {"id": "rtl_rx", "name": "UART 接收器设计",
-             "prompt": prompts["rtl_rx"],
-             "allowed_tools": ["write_rtl", "read_rtl", "list_design_files"]},
-            {"id": "rtl_top", "name": "顶层模块设计",
-             "prompt": prompts["rtl_top"],
-             "allowed_tools": ["write_rtl", "read_rtl", "list_design_files"]},
-            {"id": "simulate", "name": "仿真验证", "executor": "simulate"},
-            {"id": "debug_fix", "name": "仿真修复",
-             "prompt": prompts["debug_fix"],
-             "allowed_tools": ["read_sim_report", "read_rtl", "write_rtl"]},
-            {"id": "synthesize", "name": "逻辑综合", "executor": "synthesize"},
-            {"id": "pnr", "name": "布局布线", "executor": "pnr"},
-            {"id": "drc_fix", "name": "DRC 修复",
-             "prompt": prompts["drc_fix"],
-             "allowed_tools": ["read_drc_report", "read_sdc", "write_sdc", "read_rtl", "write_rtl"]},
-            {"id": "drc", "name": "DRC 检查", "executor": "drc"},
-            {"id": "gds", "name": "GDS 导出", "executor": "gds"},
-            {"id": "render", "name": "渲染预览", "executor": "render"},
-        ],
-        # edges 覆盖 judge 所有 to: 目标:
-        # rtl_tx→rtl_rx, rtl_rx→rtl_top, rtl_top→simulate,
-        # simulate→synthesize/debug_fix, debug_fix→simulate,
-        # synthesize→pnr/debug_fix, pnr→drc/drc_fix, drc_fix→pnr, drc→gds/drc_fix。
-        # gds 之后由 judge 返回 "done" 终止,无需 to:done 边(done 非 step)。
-        "edges": [
-            {"from": "rtl_tx", "to": "rtl_rx"},
-            {"from": "rtl_rx", "to": "rtl_top"},
-            {"from": "rtl_top", "to": "simulate"},
-            {"from": "simulate", "to": "synthesize"},
-            {"from": "simulate", "to": "debug_fix"},
-            {"from": "debug_fix", "to": "simulate"},
-            {"from": "synthesize", "to": "pnr"},
-            {"from": "synthesize", "to": "debug_fix"},
-            {"from": "pnr", "to": "drc"},
-            {"from": "pnr", "to": "drc_fix"},
-            {"from": "drc_fix", "to": "pnr"},
-            {"from": "drc", "to": "gds"},
-            {"from": "drc", "to": "drc_fix"},
-            {"from": "gds", "to": "render"},
-        ],
+        "entry_step": rtl_ids[0],
+        "steps": all_steps,
+        "edges": edges,
     }
 
-    judge = create_judge(make_judge_fn(config))
+    judge = create_judge(make_judge_fn(config, rtl_ids=rtl_ids))
     env = create_os_env(working_dir=".")
     engine = WorkflowEngine(
         workflow_dict, provider, config.model, judge, env=env,

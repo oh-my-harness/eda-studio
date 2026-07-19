@@ -36,10 +36,12 @@ def render_executor(ctx: dict) -> dict:
     design_dir = Path(ctx["context"]["design_dir"])
     docker_cfg = _as_docker_config(ctx["context"]["docker_config"])
     shell_cfg = ctx["context"]["shell_config"]
-    gds_file = design_dir / "gds" / "uart.gds"
+    from ..design_config import load_design_config
+    dcfg = load_design_config(design_dir)
+    gds_file = design_dir / "gds" / f"{dcfg.top_module}.gds"
     gds_dir = design_dir / "gds"
     gds_dir.mkdir(parents=True, exist_ok=True)
-    png_out = gds_dir / "uart.png"
+    png_out = gds_dir / f"{dcfg.top_module}.png"
 
     if not gds_file.exists():
         return {"output": f"GDS 文件不存在: {gds_file}",

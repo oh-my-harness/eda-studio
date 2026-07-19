@@ -2,13 +2,20 @@
 from .config import AppConfig
 
 
-def make_judge_fn(config: AppConfig):
+def make_judge_fn(config: AppConfig, rtl_ids: list = None):
     """构造 judge closure。
+
+    Args:
+        config: AppConfig
+        rtl_ids: rtl step id 列表(如 ['rtl_tx','rtl_rx','rtl_top']),
+                从 design_config 动态传入。None 时 fallback 到 uart 默认值。
 
     judge ctx 是只读 dict,字段:step_id / output / step_count / retry_count / structured。
     retry_count 是 engine 维护的连续 Retry 次数,只对 "retry" 累加;to: 回环不累加。
     per-环节 回环计数用闭包变量自行维护。
     """
+    if rtl_ids is None:
+        rtl_ids = ["rtl_tx", "rtl_rx", "rtl_top"]
     fix_counts = {"simulate": 0, "pnr": 0, "drc": 0}
     max_fix = config.workflow_config.max_fix_retries
 
@@ -29,20 +36,14 @@ def make_judge_fn(config: AppConfig):
         rtl_done = tool_calls_count > 0
         rtl_retry_exhausted = retry_count >= max_fix
 
-        if step_id == "rtl_tx":
-            if rtl_done:
-                return "to:rtl_rx"
-            return "abort:done" if rtl_retry_exhausted else "retry"
-
-        if step_id == "rtl_rx":
-            if rtl_done:
-                return "to:rtl_top"
-            return "abort:done" if rtl_retry_exhausted else "retry"
-
-        if step_id == "rtl_top":
-            if rtl_done:
-                return "to:simulate"
-            return "abort:done" if rtl_retry_exhausted else "retry"
+        # 动态 rtl 路由:rtl_ids[i] → rtl_ids[i+1],最后一个 → simulate
+        if step_id in rtl_ids:
+            if not rtl_done:
+                return "abort:done" if rtl_retry_exhausted else "retry"
+            idx = rtl_ids.index(step_id)
+            if idx < len(rtl_ids) - 1:
+                return f"to:{rtl_ids[idx + 1]}"
+            return "to:simulate"
 
         if step_id == "simulate":
             if success:

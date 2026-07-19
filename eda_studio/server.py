@@ -36,7 +36,7 @@ _REPORT_PATHS = {
     "pnr": "pnr/report.txt",
     "drc": "pnr/drc.rpt",
     "gds": "gds/report.txt",
-    "render": "gds/uart.png",
+    "render": None,  # 特殊处理:路径为 gds/<design_name>.png,在 get_report 里动态拼
 }
 
 
@@ -111,6 +111,32 @@ def create_app(
     async def get_status():
         return JSONResponse(status_code=200, content=state.status_snapshot())
 
+    # ── GET /api/workflow-steps ────────────────────────────────
+    @app.get("/api/workflow-steps")
+    async def get_workflow_steps():
+        """返回当前 design 的 workflow step 列表(从 design.yaml 动态生成)。"""
+        if not state.design_name:
+            return JSONResponse(status_code=404, content={"error": "no active design"})
+        from pathlib import Path
+        from .design_config import load_design_config
+        dcfg = load_design_config(Path(f"designs/{state.design_name}"))
+        steps = []
+        for m in dcfg.modules:
+            steps.append({"id": f"rtl_{m.id}", "name": m.name, "type": "LLM",
+                          "icon": "📐", "desc": f"设计 {m.file}"})
+        fixed = [
+            {"id": "simulate", "name": "仿真验证", "type": "EXEC", "icon": "🔬", "desc": "Verilator 仿真"},
+            {"id": "debug_fix", "name": "仿真修复", "type": "LLM", "icon": "🛠️", "desc": "分析报告修复 RTL"},
+            {"id": "synthesize", "name": "逻辑综合", "type": "EXEC", "icon": "⚙️", "desc": "Yosys 综合"},
+            {"id": "pnr", "name": "布局布线", "type": "EXEC", "icon": "📐", "desc": "OpenROAD PnR"},
+            {"id": "drc_fix", "name": "DRC 修复", "type": "LLM", "icon": "🔧", "desc": "修复 DRC 违规"},
+            {"id": "drc", "name": "DRC 检查", "type": "EXEC", "icon": "✅", "desc": "Magic DRC"},
+            {"id": "gds", "name": "GDS 导出", "type": "EXEC", "icon": "📦", "desc": "导出 GDS"},
+            {"id": "render", "name": "渲染预览", "type": "EXEC", "icon": "🖼️", "desc": "GDS → PNG"},
+        ]
+        steps.extend(fixed)
+        return JSONResponse(status_code=200, content={"steps": steps})
+
     # ── GET /api/report/{step} ──────────────────────────────────
     @app.get("/api/report/{step}")
     async def get_report(step: str):
@@ -131,7 +157,7 @@ def create_app(
         """返回 render step 产出的 PNG 预览图。"""
         if not state.design_name:
             return PlainTextResponse("no active design", status_code=404)
-        path = Path(f"designs/{state.design_name}") / "gds" / "uart.png"
+        path = Path(f"designs/{state.design_name}") / "gds" / f"{state.design_name}.png"
         if not path.is_file():
             return PlainTextResponse("render not found", status_code=404)
         return FileResponse(path, media_type="image/png")

@@ -12,8 +12,10 @@ def drc_executor(ctx: dict) -> dict:
     design_dir = Path(ctx["context"]["design_dir"])
     docker_cfg = _as_docker_config(ctx["context"]["docker_config"])
     shell_cfg = ctx["context"]["shell_config"]
+    from ..design_config import load_design_config
+    dcfg = load_design_config(design_dir)
     pnr_dir = design_dir / "pnr"
-    def_file = pnr_dir / "uart_pnr.def"
+    def_file = pnr_dir / f"{dcfg.top_module}_pnr.def"
     drc_rpt = pnr_dir / "drc.rpt"
 
     if not def_file.exists():

@@ -118,20 +118,8 @@
         let viewStepId = null;  // center-col 当前显示的 step
         const stepStore = {};   // sid → { round, lines: [{text,cls}], output, cost, finished, success }
 
-        const stepConfig = {
-            rtl_tx:      { name: 'UART 发送器',  icon: '📤', desc: '设计 uart_tx.v',   type: 'LLM' },
-            rtl_rx:      { name: 'UART 接收器',  icon: '📥', desc: '设计 uart_rx.v',   type: 'LLM' },
-            rtl_top:     { name: '顶层模块',     icon: '🔗', desc: '设计 uart.v',      type: 'LLM' },
-            simulate:    { name: '仿真验证',     icon: '🔬', desc: 'Verilator 仿真',  type: 'EXEC' },
-            debug_fix:   { name: '仿真修复',     icon: '🛠️', desc: '分析报告修复 RTL', type: 'LLM' },
-            synthesize:  { name: '逻辑综合',     icon: '⚙️', desc: 'Yosys 综合',      type: 'EXEC' },
-            pnr:         { name: '布局布线',     icon: '📐', desc: 'OpenROAD PnR',    type: 'EXEC' },
-            drc_fix:     { name: 'DRC 修复',     icon: '🔧', desc: '修复 DRC 违规',    type: 'LLM' },
-            drc:         { name: 'DRC 检查',     icon: '✅', desc: 'Magic DRC',       type: 'EXEC' },
-            gds:         { name: 'GDS 导出',     icon: '📦', desc: '导出 GDS',         type: 'EXEC' },
-            render:      { name: '渲染预览',     icon: '🖼️', desc: 'GDS → PNG',       type: 'EXEC' },
-        };
-        const stepOrder = ['rtl_tx', 'rtl_rx', 'rtl_top', 'simulate', 'debug_fix', 'synthesize', 'pnr', 'drc_fix', 'drc', 'gds', 'render'];
+        const stepConfig = {};   // 从 /api/workflow-steps 动态加载
+        let stepOrder = [];
 
         function buildFlowchart() {
             const c = document.getElementById('left-col');
@@ -150,7 +138,7 @@
                 c.appendChild(n);
             });
         }
-        buildFlowchart();
+        // buildFlowchart() 在 submitTask 时从 /api/workflow-steps 加载后调用
 
         function resetFlowchart() {
             stepOrder.forEach(id => {
@@ -218,11 +206,16 @@
                     document.getElementById('submit-btn').disabled = false;
                 } else if (resp.ok) {
                     document.getElementById('events').innerHTML = '';
-                    resetFlowchart();
                     totalCost = 0;
                     updateCostDisplay();
                     stepRound = {};
-                    connectWS();
+                    // 先加载 workflow steps,再 resetFlowchart(用新 stepConfig)+ connectWS
+                    fetch('/api/workflow-steps').then(r => r.json()).then(data => {
+                        stepOrder = data.steps.map(s => s.id);
+                        data.steps.forEach(s => { stepConfig[s.id] = s; });
+                        resetFlowchart();
+                        connectWS();
+                    });
                 } else {
                     alert('启动失败');
                     document.getElementById('submit-btn').disabled = false;

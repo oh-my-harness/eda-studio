@@ -1,0 +1,19 @@
+# Design 配置:声明模块名、testbench、RTL 模块拆分。
+# executor 和 workflow 从此文件读取,避免硬编码。
+
+top_module: i2c          # 顶层模块名(synth -top / link_design / <top>.gds)
+tb_module: tb_i2c        # testbench 模块名(verilator --top-module)
+
+# RTL 模块拆分:每个模块一个 LLM step,按顺序设计。
+# workflow 根据此列表动态生成 rtl_<id> step + edges。
+modules:
+  - id: master
+    name: I2C 主机模块
+    file: i2c_master.v
+    module_name: i2c_master
+    prompt_hint: "设计 i2c_master 主机模块。实现 START/STOP 生成、8bit 数据收发 MSB first、ACK 检测。SDA 双向:发送时驱动,等 ACK 时释放采样。SCL 100kHz(50MHz/500)。"
+  - id: top
+    name: 顶层模块
+    file: i2c.v
+    module_name: i2c
+    prompt_hint: "设计顶层 i2c 模块。例化 i2c_master,对外暴露双向 sda/scl。用 sda_drv/scl_drv 驱动开漏总线,sda_in/scl_in 采样。"

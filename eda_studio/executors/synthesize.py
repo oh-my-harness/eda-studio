@@ -8,7 +8,10 @@ def synthesize_executor(ctx: dict) -> dict:
     design_dir = Path(ctx["context"]["design_dir"])
     docker_cfg = _as_docker_config(ctx["context"]["docker_config"])
     shell_cfg = ctx["context"]["shell_config"]
-    rtl_files = sorted(f for f in (design_dir / "rtl").glob("*.v") if f.name != "tb_uart.v")
+    from ..design_config import load_design_config
+    dcfg = load_design_config(design_dir)
+    tb_filename = f"{dcfg.tb_module}.v"
+    rtl_files = sorted(f for f in (design_dir / "rtl").glob("*.v") if f.name != tb_filename)
     synth_dir = design_dir / "synth"
     synth_dir.mkdir(parents=True, exist_ok=True)
     json_out = synth_dir / "netlist.json"
@@ -32,7 +35,7 @@ def synthesize_executor(ctx: dict) -> dict:
     # -noattr -noexpr:openroad read_verilog 不认属性和 reg 声明
     script = (
         f"read_verilog {rtl_paths}\n"
-        f"synth -top uart\n"
+        f"synth -top {dcfg.top_module}\n"
         f"dfflibmap -liberty {pdk_lib}\n"
         f"abc -liberty {pdk_lib}\n"
         f"stat\n"

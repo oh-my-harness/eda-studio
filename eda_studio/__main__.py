@@ -238,11 +238,14 @@ def cmd_restore(design_name: str, config_path: str):
 
     env = create_os_env(working_dir=".")
     provider, _pricing = build_providers(config)
+    from .design_config import load_design_config
+    from pathlib import Path as _Path
+    dcfg = load_design_config(_Path(f"designs/{design_name}"))
     engine = WorkflowEngine.restore(
         store_dir, task_id,
         provider=provider,
         model=config.model,
-        judge=create_judge(make_judge_fn(config)),
+        judge=create_judge(make_judge_fn(config, rtl_ids=dcfg.rtl_step_ids)),
         env=env,
     )
     engine = _re_register(engine, config, design_name)
