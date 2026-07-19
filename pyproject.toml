@@ -1,6 +1,9 @@
 [project]
 name = "eda-studio"
 version = "0.1.0"
+description = "基于 Senza SDK 的开源 EDA 自动化芯片设计流程示例"
+license = {text = "MIT"}
+authors = [{name = "oh-my-harness"}]
 requires-python = ">=3.9"
 dependencies = [
     "senza-sdk>=0.4.3",
