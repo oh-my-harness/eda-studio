@@ -151,27 +151,27 @@ senza.create_rule_approval_hook(chain: RuleChain)   # impl BeforeToolCallHook
 
 ## 架构关键约定
 
-### 两层集成模式
+### 集成模式
 
-外层 `WorkflowEngine` 编排流程节点和路由，每个 LLM 步骤**内嵌一个 `AgentHarness`**。
+`WorkflowEngine` 编排流程，LLM 步骤（`prompt` + `allowed_tools`）和 executor 步骤混用。工具通过 `.with_tool()` 注册到 engine 级别，LLM 步骤通过 `allowed_tools` 声明可用子集。
 
-**关键设计决策**：所有 LLM 步骤（rtl_design / debug_fix / drc_fix）实现为 **executor 步骤**，内部实例化 AgentHarness。原因：
+**关键设计决策**：LLM 步骤用 workflow 原生 LLM step（`prompt` + `allowed_tools`），不用 executor 包装 AgentHarness。原因：
 
-1. workflow 定义统一（全是 executor 步骤，无 LLM step/executor 混用）
-2. AgentHarness 可自由配置（专属 system prompt、tools、model、pricing）
-3. judge 逻辑统一（只看 executor 返回的 dict，不区分步骤类型）
-4. 展示了 `create_executor(cb)` 包装 AgentHarness 的模式
+1. WorkflowEngine 原生支持 LLM step 和 executor step 混用，这是 senza 的设计意图
+2. hooks、compaction、context 管理、usage 统计等引擎原生能力自动生效
+3. 工具通过 `.with_tool()` 注册到 engine 级别，通过 `allowed_tools` 控制每步可用子集
+4. judge 逻辑统一（LLM step 和 executor step 的 result 都有 `output` 字段）
 
 ### Workflow 节点
 
 | 节点 | 类型 | 职责 |
 |------|------|------|
-| `rtl_design` | executor（内嵌 AgentHarness） | LLM 根据需求生成 Verilog RTL |
+| `rtl_design` | LLM step（prompt + allowed_tools） | LLM 根据需求生成 Verilog RTL |
 | `simulate` | executor | verilator 编译+仿真 |
-| `debug_fix` | executor（内嵌 AgentHarness） | LLM 读仿真报告/波形，修复 RTL |
+| `debug_fix` | LLM step（prompt + allowed_tools） | LLM 读仿真报告/波形，修复 RTL |
 | `synthesize` | executor | yosys 综合，输出 netlist |
 | `pnr` | executor | OpenROAD floorplan→routing |
-| `drc_fix` | executor（内嵌 AgentHarness） | LLM 读 DRC 报告，修复约束/RTL |
+| `drc_fix` | LLM step（prompt + allowed_tools） | LLM 读 DRC 报告，修复约束/RTL |
 | `drc` | executor | DRC/LVS 检查（magic/netgen） |
 | `gds` | executor | 导出 GDSII（klayout） |
 

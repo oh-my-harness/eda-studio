@@ -12,7 +12,7 @@
 Senza 是 oh-my-harness runtime 的 Python SDK。当前仓库的 `examples/` 提供 14 个独立小示例，但缺少一个**真实复杂项目**来：
 
 1. 验证 senza 在长流程、多工具、多 provider、失败恢复场景下的可用性
-2. 作为教学示例展示 `WorkflowEngine` 包 `AgentHarness` 的两层集成模式
+2. 作为教学示例展示 `WorkflowEngine` 的 LLM step + executor step 混用模式
 3. 展示 senza 的差异化能力（judge 路由、executor、hooks、崩溃恢复、多 provider、budget/rules/pricing）
 
 本项目用开源 EDA 工具链（verilator + yosys + OpenROAD）完成一个中等复杂度数字电路（UART）的 RTL→GDS 全流程，由 LLM 生成 RTL 并在失败时修复。
@@ -60,16 +60,19 @@ Senza 是 oh-my-harness runtime 的 Python SDK。当前仓库的 `examples/` 提
 
 ## 3. 架构
 
-### 3.1 两层集成模式
+### 3.1 集成模式
+
+`WorkflowEngine` 编排流程，LLM 步骤（`prompt` + `allowed_tools`）和 executor 步骤混用。工具通过 `.with_tool()` 注册到 engine 级别，LLM 步骤通过 `allowed_tools` 声明可用子集。
 
 ```
 ┌─────────────────────────────────────────────────────────┐
 │  WorkflowEngine（外层编排）                              │
 │  ┌──────────┐    ┌──────────┐    ┌──────────┐          │
 │  │ rtl_design│    │ debug_fix│    │ drc_fix  │          │
-│  │ (LLM节点) │    │ (LLM节点) │    │ (LLM节点) │          │
-│  │ 内嵌      │    │ 内嵌      │    │ 内嵌      │          │
-│  │ AgentHarness│  │ AgentHarness│  │ AgentHarness│        │
+│  │ (LLM step)│    │ (LLM step)│    │ (LLM step)│          │
+│  │ prompt +  │    │ prompt +  │    │ prompt +  │          │
+│  │ allowed_  │    │ allowed_  │    │ allowed_  │          │
+│  │ tools     │    │ tools     │    │ tools     │          │
 │  └────┬─────┘    └────┬─────┘    └────┬─────┘          │
 │       │                │                │                │
 │  ┌────▼─────┐    ┌────▼─────┐    ┌────▼─────┐          │
@@ -82,6 +85,7 @@ Senza 是 oh-my-harness runtime 的 Python SDK。当前仓库的 `examples/` 提
 │  │ (executor)│   │ (executor)│   │ (executor)│  (executor)│
 │  └──────────┘    └──────────┘    └──────────┘          │
 │                                                         │
+│  tools: with_tool() 注册到 engine 级别                  │
 │  judge: 解析 executor 报告 → 路由决策                    │
 │  hooks: 日志/成本/审计/检查点                            │
 │  budget: 成本超限停止                                    │
@@ -94,9 +98,9 @@ Senza 是 oh-my-harness runtime 的 Python SDK。当前仓库的 `examples/` 提
 
 ```mermaid
 graph TD
-    A[rtl_design<br/>AgentHarness: 生成 Verilog] --> B[simulate<br/>executor: verilator]
+    A[rtl_design<br/>LLM step: 生成 Verilog] --> B[simulate<br/>executor: verilator]
     B --> C{judge:<br/>仿真通过?}
-    C -->|失败,重试<3| D[debug_fix<br/>AgentHarness: 分析+修复]
+    C -->|失败,重试<3| D[debug_fix<br/>LLM step: 分析+修复]
     D --> B
     C -->|失败,重试>=3| Z[abort:done]
     C -->|通过| E[synthesize<br/>executor: yosys]
@@ -104,7 +108,7 @@ graph TD
     F -->|失败| D
     F -->|通过| G[pnr<br/>executor: OpenROAD]
     G --> H{judge:<br/>PnR 成功?}
-    H -->|失败,重试<3| I[drc_fix<br/>AgentHarness: 分析+修复]
+    H -->|失败,重试<3| I[drc_fix<br/>LLM step: 分析+修复]
     I --> G
     H -->|失败,重试>=3| Z
     H -->|通过| J[drc<br/>executor: magic/netgen]
@@ -130,20 +134,16 @@ eda-studio/                        # 独立仓库
 │   ├── __init__.py
 │   ├── __main__.py                # CLI 入口：run / restore / status
 │   ├── config.py                  # 加载 config.yaml → 创建 providers + pricing
+│   ├── prompts.py                 # LLM 步骤的 prompt 模板
 │   ├── workflow.py                # workflow 定义 + WorkflowEngine 构建
 │   ├── judge.py                   # judge 逻辑：报告解析 → 路由决策
 │   ├── hooks.py                   # 日志/成本/审计/检查点 hooks
 │   ├── rules.py                   # shell 命令审批 rules
-│   ├── tools/                     # AgentHarness 的 tools（LLM 可调用）
+│   ├── tools/                     # LLM step 可调用的 tools（with_tool 注册）
 │   │   ├── __init__.py
 │   │   ├── file_tools.py          # 读写 RTL/SDC/报告文件
 │   │   └── report_tools.py        # 解析仿真/综合/DRC 报告摘要
-│   ├── agents/                    # AgentHarness 工厂
-│   │   ├── __init__.py
-│   │   ├── rtl_agent.py           # RTL 设计 agent（生成 + 修复）
-│   │   ├── debug_agent.py         # 仿真失败分析 agent
-│   │   └── drc_agent.py           # DRC 失败修复 agent
-│   └── executors/                 # workflow executor 步骤
+│   └── executors/                 # workflow executor 步骤（EDA 工具调用）
 │       ├── __init__.py
 │       ├── simulate.py            # verilator 仿真 executor
 │       ├── synthesize.py          # yosys 综合 executor
@@ -278,49 +278,44 @@ def build_workflow(config: AppConfig, design_name: str) -> WorkflowEngine:
             {
                 "id": "rtl_design",
                 "name": "RTL 设计",
-                "type": "agent",  # 自定义标记，judge/executors 识别
-                "agent": "rtl_design",  # 引用 agent_configs 的 key
+                "prompt": RTL_DESIGN_PROMPT,  # 含设计需求 + write_rtl 工具使用说明
+                "allowed_tools": ["write_rtl", "read_rtl", "list_design_files"],
             },
             {
                 "id": "simulate",
                 "name": "仿真验证",
-                "type": "executor",
                 "executor": "simulate",
             },
             {
                 "id": "debug_fix",
                 "name": "仿真修复",
-                "type": "agent",
-                "agent": "debug_fix",
+                "prompt": DEBUG_FIX_PROMPT,  # 含 read_sim_report + 修复指令
+                "allowed_tools": ["read_sim_report", "read_rtl", "write_rtl"],
             },
             {
                 "id": "synthesize",
                 "name": "逻辑综合",
-                "type": "executor",
                 "executor": "synthesize",
             },
             {
                 "id": "pnr",
                 "name": "布局布线",
-                "type": "executor",
                 "executor": "pnr",
             },
             {
                 "id": "drc_fix",
                 "name": "DRC 修复",
-                "type": "agent",
-                "agent": "drc_fix",
+                "prompt": DRC_FIX_PROMPT,  # 含 read_drc_report + 修复指令
+                "allowed_tools": ["read_drc_report", "read_sdc", "write_sdc", "read_rtl", "write_rtl"],
             },
             {
                 "id": "drc",
                 "name": "DRC 检查",
-                "type": "executor",
                 "executor": "drc",
             },
             {
                 "id": "gds",
                 "name": "GDS 导出",
-                "type": "executor",
                 "executor": "gds",
             },
         ],
@@ -339,7 +334,7 @@ def build_workflow(config: AppConfig, design_name: str) -> WorkflowEngine:
     judge = create_judge(make_judge_fn(config))
     engine = WorkflowEngine(workflow_dict, provider, model, judge)
 
-    # 注册 executors
+    # 注册 executors（EDA 工具步骤）
     engine = (
         engine
         .with_executor("simulate", create_executor(simulate_executor))
@@ -347,6 +342,14 @@ def build_workflow(config: AppConfig, design_name: str) -> WorkflowEngine:
         .with_executor("pnr", create_executor(pnr_executor))
         .with_executor("drc", create_executor(drc_executor))
         .with_executor("gds", create_executor(gds_executor))
+        # 注册 tools（LLM 步骤可调用的工具）
+        .with_tool(create_tool("write_rtl", "写 Verilog 文件", WRITE_RTL_SCHEMA, write_rtl_fn))
+        .with_tool(create_tool("read_rtl", "读 Verilog 文件", READ_RTL_SCHEMA, read_rtl_fn))
+        .with_tool(create_tool("list_design_files", "列出工作区文件", LIST_SCHEMA, list_files_fn))
+        .with_tool(create_tool("read_sim_report", "读仿真报告", SIM_REPORT_SCHEMA, read_sim_report_fn))
+        .with_tool(create_tool("read_drc_report", "读 DRC 报告", DRC_REPORT_SCHEMA, read_drc_report_fn))
+        .with_tool(create_tool("read_sdc", "读时序约束", READ_SDC_SCHEMA, read_sdc_fn))
+        .with_tool(create_tool("write_sdc", "写时序约束", WRITE_SDC_SCHEMA, write_sdc_fn))
         .with_hooks(make_hooks(config))
         .with_task_store(f"designs/{design_name}/.taskstore")
         .with_max_steps(config.workflow_config.max_steps)
@@ -373,75 +376,66 @@ def build_workflow(config: AppConfig, design_name: str) -> WorkflowEngine:
 - `create_budget_exceeded_hook(cb)` — G1 新 API
 - `engine.with_hooks([budget_hook])` — G1 budget hook 通过 hooks 通路注册（budget_hook impl ShouldStopHook）
 
-### 4.3 AgentHarness 工厂（`agents/`）
+### 4.3 Prompt 模板（`prompts.py`）
 
-每个 LLM 步骤内嵌一个 `AgentHarness`。在 executor/step 回调中实例化并运行。
+LLM 步骤使用 WorkflowEngine 原生的 `prompt` + `allowed_tools` 机制。每个 LLM 步骤的 prompt 在 `prompts.py` 中定义，引擎自动调用 LLM 并传递 allowed_tools 中声明的工具。
 
-```python
-# agents/rtl_agent.py
-def make_rtl_agent(config: AppConfig, design_dir: Path) -> AgentHarness:
-    agent_cfg = config.agent_configs["rtl_design"]
-    builder = (
-        HarnessBuilder(agent_cfg.model)
-        .provider("gpt-*", config.providers["openai"])
-        .provider("deepseek-*", config.providers["deepseek"])
-        .provider("claude-*", config.providers["anthropic"])
-        .system_prompt(RTL_SYSTEM_PROMPT)
-        .max_tokens(agent_cfg.max_tokens)
-        .temperature(agent_cfg.temperature)
-        .tool(create_tool("write_rtl", "写 Verilog 文件", WRITE_RTL_SCHEMA, write_rtl_fn))
-        .tool(create_tool("read_rtl", "读 Verilog 文件", READ_RTL_SCHEMA, read_rtl_fn))
-        .tool(create_tool("list_design_files", "列出工作区文件", LIST_SCHEMA, list_files_fn))
-        .pricing(config.pricing_table)  # G2
-    )
-    return builder.build()
-```
+**为什么不用 executor 包装 AgentHarness**：
 
-**LLM 步骤如何嵌入 workflow**：
+WorkflowEngine 原生支持 LLM step（`prompt` + `allowed_tools`）和 executor step 混用。这是 senza 的设计意图——不需要在 executor 里手动创建 AgentHarness。原生方式的优势：
 
-senza 的 `WorkflowEngine` step 如果是 LLM 步骤，默认用自己的 prompt+tools。但我们要用 `AgentHarness` 获得动态配置能力。方案：**用 executor 步骤包装 AgentHarness**。
+- hooks、compaction、context 管理、usage 统计等引擎原生能力自动生效
+- 工具通过 `.with_tool()` 注册到 engine 级别，所有 LLM step 共享（通过 `allowed_tools` 控制每步可用子集）
+- judge 逻辑统一（LLM step 和 executor step 的 result 都有 `output` 字段）
+- 代码更简单，不需要手动管理 AgentHarness 生命周期
 
 ```python
-# executors/rtl_design_executor.py（实际由 agents/rtl_agent.py 提供）
-def rtl_design_executor(ctx: dict) -> dict:
-    """这个 executor 内部跑一个 AgentHarness"""
-    config = ctx["config"]
-    design_dir = ctx["design_dir"]
-    requirement = ctx["requirement"]
+# prompts.py
 
-    agent = make_rtl_agent(config, design_dir)
-    events = agent.prompt_and_collect(
-        f"请设计以下电路的 Verilog RTL：\n\n{requirement}\n\n"
-        f"用 write_rtl 工具写入 designs/{design_dir.name}/rtl/ 目录。",
-        timeout_ms=120000,
-    )
+RTL_DESIGN_PROMPT = """你是一个数字电路设计专家。请根据以下需求设计 Verilog RTL：
 
-    # 收集结果
-    text = ""
-    for event in events:
-        if event["type"] == "text_delta":
-            text += event.get("text", "")
+{requirement}
 
+要求：
+1. 写出可综合的 Verilog 代码
+2. 用 write_rtl 工具将代码写入 rtl/ 目录
+3. 用 list_design_files 确认文件已写入
+
+设计需求：{requirement}
+"""
+
+DEBUG_FIX_PROMPT = """仿真失败了。请分析报告并修复 RTL。
+
+1. 用 read_sim_report 读取仿真报告
+2. 用 read_rtl 读取当前 RTL 代码
+3. 分析失败原因
+4. 用 write_rtl 写入修复后的代码
+"""
+
+DRC_FIX_PROMPT = """DRC 检查失败了。请分析报告并修复。
+
+1. 用 read_drc_report 读取 DRC 报告
+2. 用 read_sdc 读取时序约束
+3. 用 read_rtl 读取相关 RTL
+4. 分析失败原因（可能是约束问题或 RTL 问题）
+5. 用 write_sdc 或 write_rtl 写入修复
+"""
+
+def build_prompts(config: AppConfig, design_name: str) -> dict:
+    """构建各 LLM 步骤的 prompt，注入设计需求等上下文"""
+    requirement = load_requirement(design_name)
     return {
-        "output": text,
-        "files_written": list_rtl_files(design_dir),
-        "usage": agent.usage(),
+        "rtl_design": RTL_DESIGN_PROMPT.format(requirement=requirement),
+        "debug_fix": DEBUG_FIX_PROMPT,
+        "drc_fix": DRC_FIX_PROMPT,
     }
 ```
 
-**关键设计决策**：所有 LLM 步骤（rtl_design / debug_fix / drc_fix）都实现为 **executor**，内部实例化 AgentHarness。这样：
-- workflow 定义统一（全是 executor 步骤）
-- AgentHarness 可自由配置（专属 system prompt、tools、model）
-- judge 逻辑统一（只看 executor 返回的 dict）
-- 展示了 `create_executor(cb)` 包装 AgentHarness 的模式
-
 **展示的 senza 能力**：
-- `HarnessBuilder` fluent API（model/provider/system_prompt/max_tokens/temperature/tool）
-- `create_tool()` — 工具创建
-- `.pricing(provider)` — G2 新 API
-- `.provider(pattern, provider)` — glob 多 provider 路由
-- `agent.prompt_and_collect()` — 发送 prompt + 收集事件
-- `agent.usage()` — 成本查询
+- `WorkflowEngine` 原生 LLM step（`prompt` + `allowed_tools`）— 不需要手动创建 AgentHarness
+- `.with_tool()` — 工具注册到 engine 级别，通过 `allowed_tools` 控制每步可用子集
+- LLM step 与 executor step 混用 — senza 的核心设计模式
+- `engine.total_cost()` — 引擎级成本统计（配合 G2 pricing）
 
 ### 4.4 工具设计（`tools/`）
 
@@ -975,10 +969,10 @@ senza 的 `run_shell()` 函数封装了 docker exec 前缀（见 §4.5 executor 
 
 项目跑通后，再分解为教学材料：
 
-1. **项目结构概览** — 两层集成模式
+1. **项目结构概览** — LLM step + executor step 混用模式
 2. **Provider 配置** — 多 provider + pricing
 3. **Tool 定义** — LLM 可调用的工具
-4. **AgentHarness 工厂** — 每个 LLM 步骤的 agent
+4. **Prompt 模板** — 每个 LLM 步骤的 prompt 设计
 5. **Executor 设计** — EDA 工具调用
 6. **Workflow 定义** — 声明式流程图
 7. **Judge 路由** — 报告解析 + 条件跳转
@@ -1007,7 +1001,7 @@ senza 的 `run_shell()` 函数封装了 docker exec 前缀（见 §4.5 executor 
 | 阶段 | 内容 | 依赖 |
 |------|------|------|
 | P1 | 项目骨架 + config.py + CLI | 无 |
-| P2 | tools/ + agents/（AgentHarness 工厂） | P1 |
+| P2 | tools/ + prompts.py（LLM 步骤 prompt 模板） | P1 |
 | P3 | executors/（5 个 EDA executor） | P2 |
 | P4 | workflow.py + judge.py（路由逻辑） | P3 |
 | P5 | hooks.py + rules.py + budget | P4, G1/G3 已实现 |
