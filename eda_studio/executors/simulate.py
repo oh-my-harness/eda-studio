@@ -20,6 +20,9 @@ def simulate_executor(ctx: dict) -> dict:
     docker_cfg = ctx["context"]["docker_config"]
     shell_cfg = ctx["context"]["shell_config"]
 
+    from ..shell_safety import _as_docker_config
+    docker_cfg = _as_docker_config(docker_cfg)
+
     rtl_files = [f for f in (design_dir / "rtl").glob("*.v") if f.name != "tb_uart.v"]
     tb_file = design_dir / "rtl" / "tb_uart.v"
     if not tb_file.exists():
