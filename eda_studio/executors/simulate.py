@@ -1,7 +1,7 @@
 """verilator 仿真 executor。"""
 import subprocess
 from pathlib import Path
-from ..shell_safety import run_shell, to_container_cwd, ShellSafetyError
+from ..shell_safety import run_shell, to_container_cwd, to_container_path, ShellSafetyError
 
 
 def _parse_verilator_output(stderr: str, stdout: str) -> str:
@@ -32,7 +32,8 @@ def simulate_executor(ctx: dict) -> dict:
         "verilator", "--binary", "--timing",
         "-Wall",
         "--top-module", "tb_uart",
-        *[str(f) for f in rtl_files], str(tb_file),
+        *[to_container_path(f, docker_cfg) for f in rtl_files],
+        to_container_path(tb_file, docker_cfg),
         "-o", "sim_out",
     ]
     sim_dir = design_dir / "sim"
