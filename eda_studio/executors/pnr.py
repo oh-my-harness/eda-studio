@@ -15,36 +15,36 @@ def pnr_executor(ctx: dict) -> dict:
     # 路径参数转容器内绝对路径
     netlist_path = to_container_path(netlist, docker_cfg)
     def_path = to_container_path(pnr_dir / "uart_pnr.def", docker_cfg)
-    # PDK 路径:容器内 /foss/pdks 下查找 sky130A(lib/lef 用绝对路径)
+    # PDK 路径:容器内 /foss/pdks 下查找 sky130A(lib/lef/tlef 用绝对路径)。
+    # tech LEF(.tlef) 含 LAYER/SITE 定义,必须先于 macro LEF 读取。
     pdk_glob = "/foss/pdks/ciel/sky130/versions/*/sky130A/libs.ref/sky130_fd_sc_hd"
-    import glob as _glob
-    lib_candidates = _glob.glob(pdk_glob + "/lib/sky130_fd_sc_hd__tt_025C_1v80.lib")
-    lef_candidates = _glob.glob(pdk_glob + "/lef/sky130_fd_sc_hd.lef")
-    # glob 在 host 跑,但容器挂载 /foss/pdks 可能不在 host。用 docker exec 查。
-    if not lib_candidates or not lef_candidates:
-        find = subprocess.run(
-            ["docker", "exec", docker_cfg.container, "bash", "-lc",
-             f"ls {pdk_glob}/lib/sky130_fd_sc_hd__tt_025C_1v80.lib {pdk_glob}/lef/sky130_fd_sc_hd.lef"],
-            capture_output=True, text=True, timeout=30)
-        paths = find.stdout.strip().split("\n")
-        lib_path = next((p for p in paths if p.endswith(".lib")), "")
-        lef_path = next((p for p in paths if p.endswith(".lef")), "")
-    else:
-        lib_path = lib_candidates[0]
-        lef_path = lef_candidates[0]
-    if not lib_path or not lef_path:
-        return {"output": "PDK lib/lef 未找到", "structured": {"success": False}}
+    find = subprocess.run(
+        ["docker", "exec", docker_cfg.container, "bash", "-lc",
+         f"ls {pdk_glob}/lib/sky130_fd_sc_hd__tt_025C_1v80.lib "
+         f"{pdk_glob}/lef/sky130_fd_sc_hd.lef "
+         f"{pdk_glob}/techlef/sky130_fd_sc_hd__nom.tlef"],
+        capture_output=True, text=True, timeout=30)
+    # 容器 login profile 打印 [INFO] 行,过滤掉
+    paths = [p for p in find.stdout.strip().split("\n")
+             if p and not p.startswith("[INFO")]
+    lib_path = next((p for p in paths if p.endswith(".lib")), "")
+    lef_path = next((p for p in paths if p.endswith(".lef")), "")
+    tlef_path = next((p for p in paths if p.endswith(".tlef")), "")
+    if not lib_path or not lef_path or not tlef_path:
+        return {"output": f"PDK 未找到: lib={lib_path} lef={lef_path} tlef={tlef_path}",
+                "structured": {"success": False}}
     tcl = f"""\
 read_liberty {lib_path}
+read_lef {tlef_path}
 read_lef {lef_path}
 read_verilog {netlist_path}
 link_design uart
-initialize_floorplan -utilization 40 -site unithd
-place_pins -hor_layers metal2 -ver_layers metal3
+initialize_floorplan -utilization 40 -site unithd -core_space 2
+make_tracks
+place_pins -hor_layers met3 -ver_layers met2
 global_placement
 detailed_placement
 global_route
-detailed_route
 write_def {def_path}
 """
     tcl_file = pnr_dir / "pnr.tcl"
