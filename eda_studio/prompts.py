@@ -60,8 +60,6 @@ DEBUG_FIX_PROMPT = """仿真失败了。请分析报告并修复 RTL。
 2. 用 read_rtl 读取当前 RTL 代码
 3. 分析失败原因(语法错误、时序违例、功能错误等)
 4. 用 write_rtl 写入修复后的代码(保持 filename 不变)
-
-每一步都必须实际调用工具,不要只在思考中计划。
 """
 
 DRC_FIX_PROMPT = """DRC 检查失败了。请分析报告并修复。
@@ -70,8 +68,6 @@ DRC_FIX_PROMPT = """DRC 检查失败了。请分析报告并修复。
 2. 用 read_sdc 读取时序约束
 3. 用 read_rtl 读取相关 RTL
 4. 用 write_sdc 或 write_rtl 写入修复
-
-每一步都必须实际调用工具,不要只在思考中计划。
 """
 
 
