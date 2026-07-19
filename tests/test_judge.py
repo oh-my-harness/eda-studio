@@ -66,9 +66,17 @@ def test_simulate_success_resets_count():
     judge(ctx("simulate", success=True))
     assert judge(ctx("simulate", success=False)) == "to:debug_fix"
 
-def test_debug_fix_to_simulate():
+def test_debug_fix_to_simulate_when_tool_called():
     judge = make_judge_fn(make_config())
-    assert judge(ctx("debug_fix")) == "to:simulate"
+    assert judge(ctx("debug_fix", tool_calls_count=1)) == "to:simulate"
+
+def test_debug_fix_retries_when_no_tool():
+    judge = make_judge_fn(make_config())
+    assert judge(ctx("debug_fix", tool_calls_count=0)) == "retry"
+
+def test_debug_fix_aborts_when_retry_exhausted():
+    judge = make_judge_fn(make_config(max_fix=2))
+    assert judge(ctx("debug_fix", tool_calls_count=0, retry_count=2)) == "abort:done"
 
 def test_synthesize_success_to_pnr():
     judge = make_judge_fn(make_config())
@@ -86,14 +94,18 @@ def test_pnr_fail_to_drc_fix():
     judge = make_judge_fn(make_config())
     assert judge(ctx("pnr", success=False)) == "to:drc_fix"
 
+def test_drc_fix_to_pnr_when_tool_called():
+    judge = make_judge_fn(make_config())
+    assert judge(ctx("drc_fix", tool_calls_count=1)) == "to:pnr"
+
+def test_drc_fix_retries_when_no_tool():
+    judge = make_judge_fn(make_config())
+    assert judge(ctx("drc_fix", tool_calls_count=0)) == "retry"
+
 def test_pnr_fix_count_exceeds():
     judge = make_judge_fn(make_config(max_fix=1))
     assert judge(ctx("pnr", success=False)) == "to:drc_fix"
     assert judge(ctx("pnr", success=False)) == "abort:done"
-
-def test_drc_fix_to_pnr():
-    judge = make_judge_fn(make_config())
-    assert judge(ctx("drc_fix")) == "to:pnr"
 
 def test_drc_success_to_gds():
     judge = make_judge_fn(make_config())

@@ -49,7 +49,10 @@ def make_judge_fn(config: AppConfig):
             return "to:debug_fix"
 
         if step_id == "debug_fix":
-            return "to:simulate"
+            # debug_fix 必须调了工具(读报告/改 RTL)才允许回 simulate 重试
+            if tool_calls_count > 0:
+                return "to:simulate"
+            return "abort:done" if retry_count >= max_fix else "retry"
 
         if step_id == "synthesize":
             return "to:pnr" if success else "to:debug_fix"
@@ -64,7 +67,10 @@ def make_judge_fn(config: AppConfig):
             return "to:drc_fix"
 
         if step_id == "drc_fix":
-            return "to:pnr"
+            # drc_fix 必须调了工具(读报告/改 SDC/RTL)才允许回 pnr 重试
+            if tool_calls_count > 0:
+                return "to:pnr"
+            return "abort:done" if retry_count >= max_fix else "retry"
 
         if step_id == "drc":
             if success:
