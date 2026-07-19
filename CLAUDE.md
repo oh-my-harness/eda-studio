@@ -2,7 +2,7 @@
 
 ## 项目概述
 
-EDA Studio 是基于 [Senza](https://github.com/oh-my-harness/Senza) SDK 的开源 EDA 自动化芯片设计项目，完成 RTL→GDS 全流程。独立仓库，通过 `pip install senza-sdk` 引入依赖。
+EDA Studio 是基于 [Senza](https://github.com/oh-my-harness/Senza) SDK 的开源 EDA 自动化芯片设计项目，完成 RTL→GDS 全流程。独立仓库，通过 `pip install senza-sdk` 引入依赖。提供 CLI(`run`/`restore`/`status`)和 Web UI(`serve`)两种使用方式。
 
 设计文档：[`docs/eda-studio-design.md`](docs/eda-studio-design.md)
 
@@ -109,7 +109,7 @@ docker run -d --name eda-tools -v $(pwd)/designs:/work/designs -e PDK=sky130A hp
 
 ### 版本
 
-- **senza-sdk 0.4.1**（PyPI 已发布；开发期用本地 editable install，见「开发环境」）
+- **senza-sdk**(版本见 `pyproject.toml`,当前 0.4.2;PyPI 已发布;开发期用本地 editable install,见「开发环境」)
 - import 名：`senza`（包名 `senza-sdk`）
 - abi3 wheel，支持 Python 3.9–3.14+
 - G1 Budget / G2 Pricing / G3 Rules 全部新 API 已合并到 Senza main
@@ -180,9 +180,9 @@ senza.create_rule_approval_hook(chain: RuleChain)   # impl BeforeToolCallHook
 
 ### Workflow 节点
 
-| 节点 | 类型 | 职责 |
-|------|------|------|
-| `rtl_design` | LLM step（prompt + allowed_tools） | LLM 根据需求生成 Verilog RTL |
+| `rtl_tx` | LLM step（prompt + allowed_tools） | LLM 设计 uart_tx.v 发送器模块 |
+| `rtl_rx` | LLM step（prompt + allowed_tools） | LLM 设计 uart_rx.v 接收器模块 |
+| `rtl_top` | LLM step（prompt + allowed_tools） | LLM 设计 uart.v 顶层模块(例化 tx+rx) |
 | `simulate` | executor | verilator 编译+仿真 |
 | `debug_fix` | LLM step（prompt + allowed_tools） | LLM 读仿真报告/波形，修复 RTL |
 | `synthesize` | executor | yosys 综合，输出 netlist |
@@ -200,6 +200,27 @@ senza.create_rule_approval_hook(chain: RuleChain)   # impl BeforeToolCallHook
 ### EDA 工具调用安全
 
 EDA 工具**不作为 LLM tool**（太危险），而是作为 executor 步骤由 workflow 编排固定调用。LLM 只能通过 file_tools（读写文件）和 report_tools（读报告摘要）操作。G3 Rules 审批链作为额外防护层。
+
+### max_tokens 配置（关键）
+
+`build_workflow` 必须调用 `.with_max_tokens(32768)`。glm-5.2 等 reasoning 模型的 thinking 链约 8K token，senza 默认 `max_tokens=8192` 会导致 thinking 没结束就触发 MaxTokens 截断，content 和 tool_call 无法输出——表现为流程"卡住"无输出。同仓库 blender-scene-generator 已验证此问题。
+
+### 可见性与 Web UI
+
+**CLI 可见性**：`cmd_run` 用后台线程跑 `engine.run()`，主线程迭代 `engine.subscribe()` 实时打印 WorkflowEvent（step_started/step_finished/step_progress）。关键点：
+
+1. `subscribe()` 必须在 `run()` 之前调用，否则早期事件被 broadcast channel 丢弃
+2. senza 的 `WorkflowEventIterator` 超时也抛 `StopIteration`，不能据此退出循环——只能靠 `done.is_set()`（run 线程结束）退出
+3. `WorkflowEvent` 不暴露 token 流（reasoning/text delta 被故意裁剪，见 runtime `event.rs:75`），可见性上限是 step 级 + tool 调用级
+
+**Web UI**：`serve` 子命令启动 FastAPI + WebSocket + 单页前端（仿 blender-scene-generator）：
+
+- `eda_studio/server.py` — 路由：`POST /api/task`、`GET /api/status`、`GET /api/report/{step}`、`WS /ws`
+- `eda_studio/state.py` — AppState（engine/event_iterator/task_running）
+- `eda_studio/main.py` — serve 入口 + workflow_runner（后台线程）
+- `static/index.html` — 三栏：左 workflow 流程图、中 step 输出、右事件时间线
+
+`workflow_runner` 中 `subscribe()` 也必须在 `engine.run()` 之前调用，存到 `state.event_iterator` 供 WS 转发。
 
 ---
 
@@ -266,6 +287,7 @@ pip install -e .
 前提：`../Senza` 是同级 checkout。Senza 的 Cargo.toml 用 git 依赖锁定 runtime 到 `runtime.lock` 里的 commit（当前 `94c6be8`），从 GitHub fetch——**不是本地 path 依赖**。若要升级 runtime，在 Senza 仓库更新 `senza-pkg/runtime.lock` 到新 commit。`../llm-harness-runtime` 仅用于读源码理解行为，不参与构建。
 
 - **测试**: `pytest`，不依赖真实 EDA 工具和 LLM API（用 mock executor + mock agent）
+- 不做 CI（依赖 Docker 容器和 LLM API）
 
 ---
 
@@ -275,7 +297,6 @@ pip install -e .
 - 遇到上游功能不足或 bug，按「Issue 路由」章节提 issue，不自行绕过
 - 不做 EDA 工具安装脚本（用 Docker 镜像）
 - 不追求工业级 PPA 优化（教学项目）
-- 不做 Web UI（纯 CLI + 文件产物）
 - 不做 CI（依赖 Docker 容器和 LLM API）
 - 不支持模拟电路设计
 - 不做多工艺库切换（只用 Sky130）

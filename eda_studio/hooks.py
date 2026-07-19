@@ -8,17 +8,16 @@ logger = logging.getLogger(__name__)
 def make_hooks(config: AppConfig):
     """返回 hook 闭包列表(before_turn/after_turn/after_tool_call)。"""
     def log_before_turn(ctx: dict) -> None:
-        step_id = ctx.get("step_id", "?")
-        logger.info(f"▶ {step_id} 开始")
+        turn = ctx.get("turn_index", "?")
+        logger.info(f"▶ turn {turn} 开始")
 
     def log_after_turn(ctx: dict) -> None:
-        step_id = ctx.get("step_id", "?")
-        duration = ctx.get("duration_ms", 0)
-        logger.info(f"✓ {step_id} 完成 ({duration}ms)")
+        turn = ctx.get("turn_index", "?")
+        logger.info(f"✓ turn {turn} 完成")
 
-    def audit_tool_call(ctx: dict):
+    def audit_tool_call(ctx: dict) -> str:
         tool_name = ctx.get("tool_name", "")
         logger.info(f"  tool call: {tool_name}")
-        return None  # 审计只记录,不改结果
+        return "passthrough"  # 审计只记录,不改结果
 
     return [log_before_turn, log_after_turn, audit_tool_call]

@@ -1,0 +1,192 @@
+"""FastAPI web server — HTTP endpoints + WebSocket handler。
+
+路由:
+- POST /api/task        提交设计名,启动 workflow(202);409 if running
+- GET  /api/status      返回 workflow 运行时状态快照
+- GET  /api/report/{step}  返回对应 step 的 EDA 报告文件内容
+- WS   /ws              转发 WorkflowEvent
+"""
+from __future__ import annotations
+
+import asyncio
+import json
+import logging
+import os
+import time
+from contextlib import asynccontextmanager
+from pathlib import Path
+from typing import Any, Callable
+
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse
+from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel
+
+from .state import AppState
+
+logger = logging.getLogger(__name__)
+
+# WebSocket 事件轮询超时(秒)
+_WS_EVENT_TIMEOUT = 30.0
+
+# step_id → 报告文件路径(相对 design_dir)的映射
+_REPORT_PATHS = {
+    "simulate": "sim/report.txt",
+    "synthesize": "synth/report.txt",
+    "pnr": "pnr/report.txt",
+    "drc": "pnr/drc.rpt",
+    "gds": "gds/report.txt",
+}
+
+
+class TaskRequest(BaseModel):
+    """POST /api/task request body."""
+    design: str = "uart"
+
+
+def _next_event(iterator: Any) -> Any:
+    """调用 iterator 的 next(),StopIteration 或异常时返回 None。"""
+    try:
+        return next(iterator)
+    except StopIteration:
+        return None
+    except Exception:
+        return None
+
+
+def create_app(
+    workflow_runner: Callable[[AppState, str], Any] | None = None,
+    static_dir: str = "static",
+) -> FastAPI:
+    """创建 FastAPI 应用。
+
+    Args:
+        workflow_runner: callable(state, design_name) 跑 workflow。None 时 POST /api/task 返回 202 但不执行。
+        static_dir: 静态文件目录(前端 index.html)。
+    """
+    state = AppState()
+
+    @asynccontextmanager
+    async def lifespan(app: FastAPI):
+        yield
+
+    app = FastAPI(lifespan=lifespan)
+    app.state = state  # type: ignore[assignment]
+
+    # ── POST /api/task ──────────────────────────────────────────
+    @app.post("/api/task")
+    async def submit_task(req: TaskRequest):
+        if state.task_running:
+            return JSONResponse(
+                status_code=409,
+                content={"error": "a task is already running"},
+            )
+
+        state.task_running = True
+
+        def _run_in_background():
+            try:
+                if workflow_runner is not None:
+                    logger.info("workflow starting: design=%s", req.design)
+                    workflow_runner(state, req.design)
+                    logger.info("workflow completed")
+            except Exception:
+                logger.exception("workflow failed")
+            finally:
+                state.task_running = False
+                state.clear_active_task()
+
+        import threading
+        thread = threading.Thread(target=_run_in_background, daemon=True)
+        thread.start()
+
+        return JSONResponse(
+            status_code=202,
+            content={"message": "task started", "design": req.design},
+        )
+
+    # ── GET /api/status ─────────────────────────────────────────
+    @app.get("/api/status")
+    async def get_status():
+        return JSONResponse(status_code=200, content=state.status_snapshot())
+
+    # ── GET /api/report/{step} ──────────────────────────────────
+    @app.get("/api/report/{step}")
+    async def get_report(step: str):
+        """返回对应 step 的 EDA 报告文件内容。"""
+        rel = _REPORT_PATHS.get(step)
+        if rel is None:
+            return PlainTextResponse(f"unknown step: {step}", status_code=404)
+        if not state.design_name:
+            return PlainTextResponse("no active design", status_code=404)
+        path = Path(f"designs/{state.design_name}") / rel
+        if not path.is_file():
+            return PlainTextResponse(f"report not found: {rel}", status_code=404)
+        return PlainTextResponse(path.read_text())
+
+    # ── GET /api/file/{path:path} ───────────────────────────────
+    @app.get("/api/file/{file_path:path}")
+    async def get_design_file(file_path: str):
+        """返回 design 目录下的文件(rtl/sim/synth/pnr/gds 产物)。"""
+        if not state.design_name:
+            return PlainTextResponse("no active design", status_code=404)
+        # 防 path traversal:只允许 designs/<design>/ 下
+        safe = os.path.normpath(file_path).lstrip("/")
+        if safe.startswith("..") or "/.." in safe:
+            return PlainTextResponse("forbidden", status_code=403)
+        path = Path(f"designs/{state.design_name}") / safe
+        if not path.is_file():
+            return PlainTextResponse(f"not found: {file_path}", status_code=404)
+        return PlainTextResponse(path.read_text())
+
+    # ── WS /ws ──────────────────────────────────────────────────
+    @app.websocket("/ws")
+    async def ws_handler(websocket: WebSocket):
+        """转发 WorkflowEvent 到客户端。"""
+        await websocket.accept()
+
+        # 轮询等待 event iterator 可用(最多 30s)
+        iterator = None
+        deadline = asyncio.get_event_loop().time() + _WS_EVENT_TIMEOUT
+        while iterator is None:
+            iterator = state.event_iterator
+            if iterator is not None:
+                break
+            if asyncio.get_event_loop().time() >= deadline:
+                await websocket.close()
+                return
+            await asyncio.sleep(0.1)
+
+        try:
+            while True:
+                t0 = time.monotonic()
+                event = await asyncio.get_event_loop().run_in_executor(
+                    None, lambda: _next_event(iterator)
+                )
+                elapsed = time.monotonic() - t0
+
+                if event is None:
+                    if elapsed < 1.0:
+                        # 通道关闭
+                        break
+                    # 超时,继续轮询保持 WS 存活
+                    continue
+
+                if isinstance(event, dict) and event.get("type") == "lagged":
+                    continue
+
+                await websocket.send_text(json.dumps(event))
+        except WebSocketDisconnect:
+            pass
+        except Exception as e:
+            logger.error("websocket error: %s", e)
+        finally:
+            try:
+                await websocket.close()
+            except Exception:
+                pass
+
+    # ── 静态文件(必须放在所有 API 路由之后)──
+    app.mount("/", StaticFiles(directory=static_dir, html=True), name="static")
+
+    return app

@@ -17,7 +17,13 @@ def make_judge_fn(config: AppConfig):
         structured = ctx.get("structured") or {}
         success = structured.get("success", False)
 
-        if step_id == "rtl_design":
+        if step_id == "rtl_tx":
+            return "to:rtl_rx" if ctx.get("output") else "abort:done"
+
+        if step_id == "rtl_rx":
+            return "to:rtl_top" if ctx.get("output") else "abort:done"
+
+        if step_id == "rtl_top":
             return "to:simulate" if ctx.get("output") else "abort:done"
 
         if step_id == "simulate":

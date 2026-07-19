@@ -5,7 +5,7 @@ Usage:
   python -m eda_studio restore <design> [--config config.yaml]
   python -m eda_studio status <design>
 
-senza 0.4.1 API 偏差(以实际 pyi/runtime 为准):
+senza API 偏差(以实际 pyi/runtime 为准):
 1. WorkflowEngine.total_cost() 返回 dict(含 total_cost 字段),非 float。
    cmd_run 用 .get("total_cost", 0.0) 取值;PricingProvider 无处挂载到
    WorkflowEngine(仅 HarnessBuilder 有 .pricing()),因此实际值常为 0.0
@@ -95,13 +95,90 @@ def _re_register(engine, config, design_name):
     return engine
 
 
+def _print_event(event: dict) -> None:
+    """将 WorkflowEvent dict 实时打印到终端。"""
+    if not isinstance(event, dict):
+        return
+    etype = event.get("type")
+    if etype == "step_started":
+        print(f"\n▶ {event.get('step_name', event.get('step_id', '?'))} 开始")
+    elif etype == "step_finished":
+        print(f"✓ {event.get('step_name', event.get('step_id', '?'))} 完成")
+    elif etype == "step_progress":
+        prog = event.get("progress") or {}
+        ptype = prog.get("type")
+        if ptype == "tool_call_start":
+            print(f"  🔧 调用工具: {prog.get('name', '?')}")
+        elif ptype == "tool_execution_end":
+            ok = prog.get("ok", False)
+            if ok:
+                print(f"  ✓ 工具完成: {prog.get('tool_name', '?')}")
+            else:
+                err = prog.get("error") or "未知错误"
+                print(f"  ✗ 工具失败: {prog.get('tool_name', '?')} — {err}")
+        elif ptype == "message_end":
+            kind = (prog.get("kind") or "").lower()
+            if "progress" in kind:
+                print(f"  💭 模型思考中...")
+    elif etype == "paused":
+        print(f"⏸ 暂停: {event.get('reason', '')}")
+    elif etype == "resumed":
+        print(f"▶ 恢复")
+    elif etype == "failed":
+        print(f"✗ 失败: {event.get('error', '')}")
+    elif etype == "cancelled":
+        print(f"✗ 取消: {event.get('reason', '')}")
+
+
+def _run_with_events(engine, design_name: str) -> None:
+    """后台线程跑 engine.run(),主线程迭代 subscribe() 实时打印事件。
+
+    engine.run() 阻塞(senza 内部 rt.block_on),必须放后台线程。
+    subscribe() 返回 WorkflowEventIterator,同一 engine 实例的 broadcast channel。
+    """
+    import threading, time
+    done = threading.Event()
+    error_box = []
+
+    def _runner():
+        try:
+            engine.run()
+        except Exception as e:
+            error_box.append(e)
+        finally:
+            done.set()
+
+    # subscribe 必须在 run() 之前调用,否则早期事件会被 broadcast channel 丢弃
+    iterator = engine.subscribe(timeout_ms=1000)
+
+    thread = threading.Thread(target=_runner, daemon=True)
+    thread.start()
+
+    # 主线程:迭代事件直到 run() 结束
+    while not done.is_set():
+        try:
+            ev = next(iterator)
+            if ev is not None:
+                _print_event(ev)
+        except StopIteration:
+            # senza iterator 超时也抛 StopIteration —— 不退出,继续轮询
+            # 只有 done.is_set()(run() 结束)才退出
+            time.sleep(0.2)
+        except Exception:
+            # 其他异常 —— 忽略,继续轮询
+            time.sleep(0.2)
+
+    thread.join(timeout=5)
+    if error_box:
+        raise error_box[0]
+
+
 def cmd_run(design_name: str, config_path: str):
     config = load_config(config_path)
     engine = build_workflow(config, design_name)
     print(f"启动 {design_name} 设计流程...")
-    engine.run()
-    print(f"流程结束,state={engine.state()}")
-    # total_cost() 返回 dict;PricingProvider 无处挂载时常为 0.0(已知 SDK 限制)
+    _run_with_events(engine, design_name)
+    print(f"\n流程结束,state={engine.state()}")
     cost = engine.total_cost().get("total_cost", 0.0)
     print(f"总成本: ${cost:.4f}")
     print(f"已完成 {len(engine.step_history())} 步")
@@ -147,6 +224,12 @@ def cmd_status(design_name: str):
     print(f"design={design_name} task_id={task_id} store={store_dir}")
 
 
+def cmd_serve(config_path: str, port: int, host: str = "0.0.0.0"):
+    """启动 Web UI(uvicorn + FastAPI)。"""
+    from .main import run_server
+    run_server(config_path, host, port)
+
+
 def main(argv=None):
     import argparse
     parser = argparse.ArgumentParser(prog="eda-studio")
@@ -159,6 +242,11 @@ def main(argv=None):
     p_restore.add_argument("--config", default="config.yaml")
     p_status = sub.add_parser("status", help="查看状态")
     p_status.add_argument("design")
+    p_serve = sub.add_parser("serve", help="启动 Web UI")
+    p_serve.add_argument("--config", default="config.yaml")
+    p_serve.add_argument("--port", type=int, default=3000)
+    p_serve.add_argument("--host", default="0.0.0.0")
+
 
     args = parser.parse_args(argv)
     if args.command == "run":
@@ -167,6 +255,8 @@ def main(argv=None):
         cmd_restore(args.design, args.config)
     elif args.command == "status":
         cmd_status(args.design)
+    elif args.command == "serve":
+        cmd_serve(args.config, args.port, args.host)
 
 
 if __name__ == "__main__":

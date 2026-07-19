@@ -1119,16 +1119,7 @@ designs/uart/
 
 ---
 
-```toml
-# pyproject.toml
-[project]
-name = "eda-studio"
-version = "0.1.0"
-dependencies = [
-    "senza-sdk>=0.4.1",   # 开发期从本地 ../Senza editable 安装（见 CLAUDE.md），发布时从 PyPI
-    "pyyaml>=6.0",
-]
-```
+依赖声明见 [`pyproject.toml`](../../pyproject.toml)(senza-sdk + pyyaml + fastapi/uvicorn/websockets)。
 
 > **开发期安装**：`./scripts/install-senza-dev.sh` 从本地 `../Senza` 仓库 editable 安装（`maturin develop`），改 Senza 源码后重跑即可更新。Senza 的 Cargo.toml 用 git rev 锁定 runtime commit（`senza-pkg/runtime.lock`），从 GitHub fetch——不依赖本地 runtime checkout。详见 CLAUDE.md「开发环境」。
 

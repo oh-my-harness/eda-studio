@@ -27,3 +27,10 @@ def test_cli_restore_calls_cmd_restore(tmp_path, monkeypatch):
     with patch("eda_studio.__main__.cmd_restore") as mock_restore:
         main(["restore", "uart", "--config", "config.yaml"])
     mock_restore.assert_called_once()
+
+def test_cli_serve_calls_cmd_serve(tmp_path, monkeypatch):
+    (tmp_path / "config.yaml").write_text(CFG)
+    monkeypatch.chdir(tmp_path)
+    with patch("eda_studio.__main__.cmd_serve") as mock_serve:
+        main(["serve", "--config", "config.yaml", "--port", "3000"])
+    mock_serve.assert_called_once()

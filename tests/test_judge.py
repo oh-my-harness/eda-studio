@@ -17,13 +17,29 @@ def ctx(step_id, success=None, output=""):
     return {"step_id": step_id, "output": output, "step_count": 1, "retry_count": 0,
             "structured": {"success": success} if success is not None else {}}
 
-def test_rtl_design_success():
+def test_rtl_tx_success():
     judge = make_judge_fn(make_config())
-    assert judge(ctx("rtl_design", output="generated")) == "to:simulate"
+    assert judge(ctx("rtl_tx", output="generated")) == "to:rtl_rx"
 
-def test_rtl_design_empty_output_aborts():
+def test_rtl_tx_empty_output_aborts():
     judge = make_judge_fn(make_config())
-    assert judge(ctx("rtl_design", output="")) == "abort:done"
+    assert judge(ctx("rtl_tx", output="")) == "abort:done"
+
+def test_rtl_rx_success():
+    judge = make_judge_fn(make_config())
+    assert judge(ctx("rtl_rx", output="generated")) == "to:rtl_top"
+
+def test_rtl_rx_empty_output_aborts():
+    judge = make_judge_fn(make_config())
+    assert judge(ctx("rtl_rx", output="")) == "abort:done"
+
+def test_rtl_top_success():
+    judge = make_judge_fn(make_config())
+    assert judge(ctx("rtl_top", output="generated")) == "to:simulate"
+
+def test_rtl_top_empty_output_aborts():
+    judge = make_judge_fn(make_config())
+    assert judge(ctx("rtl_top", output="")) == "abort:done"
 
 def test_simulate_success_to_synthesize():
     judge = make_judge_fn(make_config())

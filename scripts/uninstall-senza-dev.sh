@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Uninstall the editable-installed Senza, falling back to the PyPI
-# version declared in pyproject.toml (senza-sdk>=0.4.1).
+# version declared in pyproject.toml.
 #
 # Pairs with install-senza-dev.sh. Uses the repo venv (created on
 # demand by Senza's _venv.sh helper) for the pip uninstall.
@@ -15,7 +15,7 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 SENZA_DIR="${SENZA_DIR:-$(cd "$REPO_ROOT/../Senza" && pwd)}"
 
 if [ ! -f "$SENZA_DIR/scripts/_venv.sh" ]; then
-    echo "ERROR: $SENZA_DIR/scripts/_venv.sh 不存在（Senza 版本太旧，需要 >=0.4.1）" >&2
+    echo "ERROR: $SENZA_DIR/scripts/_venv.sh 不存在（Senza 版本太旧，需要 >=0.4.2）" >&2
     exit 1
 fi
 
@@ -32,4 +32,4 @@ fi
 
 echo ""
 echo "==> 完成。如需恢复 PyPI 版本："
-echo "    $PYTHON -m pip install 'senza-sdk>=0.4.1'"
+echo "    $PYTHON -m pip install senza-sdk"

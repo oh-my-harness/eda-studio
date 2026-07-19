@@ -1,0 +1,366 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+    <meta charset="UTF-8">
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🔧</text></svg>">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>EDA Studio</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        html, body { height: 100%; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #1a1a2e; color: #eee; }
+        #topbar {
+            display: flex; align-items: center; gap: 12px;
+            padding: 10px 16px; background: #16213e; border-bottom: 1px solid #0f3460;
+        }
+        .logo { font-size: 18px; font-weight: 700; color: #e94560; white-space: nowrap; }
+        #design-input {
+            flex: 0 0 200px; padding: 8px 12px; background: #1a1a2e; border: 1px solid #0f3460;
+            border-radius: 6px; color: #eee; font-size: 14px;
+        }
+        #submit-btn {
+            padding: 8px 20px; background: #e94560; border: none; border-radius: 6px;
+            color: #fff; font-size: 14px; cursor: pointer; white-space: nowrap;
+        }
+        #submit-btn:disabled { background: #555; cursor: not-allowed; }
+        .topbar-divider { width: 1px; height: 24px; background: #0f3460; }
+        #current-step-display { display: flex; align-items: center; gap: 6px; }
+        #cost-display { font-family: monospace; color: #0f3460; background: #e94560; padding: 2px 8px; border-radius: 4px; color: #fff; }
+        #status-badge { display: flex; align-items: center; gap: 6px; font-size: 13px; }
+        .badge-dot { width: 8px; height: 8px; border-radius: 50%; background: #555; }
+        #main { display: flex; height: calc(100vh - 53px); }
+        #left-col { flex: 0 0 260px; overflow-y: auto; padding: 12px; background: #16213e; border-right: 1px solid #0f3460; }
+        #center-col { flex: 1; overflow-y: auto; padding: 16px; }
+        #right-col { flex: 0 0 340px; overflow-y: auto; padding: 12px; background: #16213e; border-left: 1px solid #0f3460; }
+        .right-header { font-size: 13px; color: #888; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 8px; }
+        .flow-node {
+            display: flex; align-items: center; gap: 10px; padding: 10px;
+            margin-bottom: 6px; background: #1a1a2e; border-radius: 6px;
+            border-left: 3px solid #333; transition: all 0.2s;
+        }
+        .flow-node.pending { opacity: 0.5; }
+        .flow-node.active { border-left-color: #e94560; background: #1f2a4a; opacity: 1; }
+        .flow-node.done { border-left-color: #4ecca3; opacity: 0.8; }
+        .flow-node.failed { border-left-color: #ff4444; }
+        .flow-node-icon { font-size: 18px; }
+        .flow-node-info { flex: 1; }
+        .flow-node-name { font-size: 13px; font-weight: 600; }
+        .flow-node-desc { font-size: 11px; color: #888; }
+        .center-empty { text-align: center; margin-top: 80px; color: #555; }
+        .big-icon { font-size: 48px; margin-bottom: 12px; }
+        .hint { font-size: 14px; }
+        .step-card {
+            background: #16213e; border: 1px solid #0f3460; border-radius: 8px;
+            padding: 14px; margin-bottom: 12px;
+        }
+        .step-card-header { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+        .step-card-icon { font-size: 20px; }
+        .step-card-name { font-weight: 600; flex: 1; }
+        .step-card-round { font-size: 11px; color: #888; background: #1a1a2e; padding: 2px 6px; border-radius: 3px; }
+        .step-output { font-family: 'SF Mono', monospace; font-size: 12px; white-space: pre-wrap; max-height: 300px; overflow-y: auto; background: #0d1117; padding: 10px; border-radius: 4px; color: #ccc; }
+        .step-meta { font-size: 11px; color: #888; margin-top: 6px; }
+        .tool-line { font-family: monospace; font-size: 12px; padding: 2px 0 2px 16px; color: #aaa; }
+        .tool-line.ok { color: #4ecca3; }
+        .tool-line.err { color: #ff6b6b; }
+        #events { list-style: none; }
+        #events li { display: flex; gap: 8px; padding: 6px 0; border-bottom: 1px solid #1a1a2e; font-size: 12px; }
+        .event-icon { flex: 0 0 20px; }
+        .event-body { flex: 1; }
+        .event-text { color: #ccc; }
+        .event-meta { font-size: 10px; color: #666; }
+        .event-ts { font-size: 10px; color: #555; font-family: monospace; }
+        .event-step_started .event-icon { color: #e94560; }
+        .event-step_finished .event-icon { color: #4ecca3; }
+        .event-failed .event-icon { color: #ff4444; }
+        .event-paused .event-icon { color: #ffc107; }
+        .report-link { display: inline-block; margin-top: 6px; color: #58a6ff; font-size: 12px; text-decoration: none; }
+        .report-link:hover { text-decoration: underline; }
+        .spinner { display: inline-block; width: 16px; height: 16px; border: 2px solid #333; border-top-color: #e94560; border-radius: 50%; animation: spin 0.8s linear infinite; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        .thinking { color: #888; font-size: 12px; font-style: italic; }
+    </style>
+</head>
+<body>
+    <div id="topbar">
+        <span class="logo">🔧 EDA Studio</span>
+        <input id="design-input" value="uart" placeholder="design name">
+        <button id="submit-btn" onclick="submitTask()">运行</button>
+        <div class="topbar-divider"></div>
+        <div id="current-step-display">
+            <span id="current-step-icon">⚪</span>
+            <span id="current-step-name">Idle</span>
+        </div>
+        <div class="topbar-divider"></div>
+        <span id="cost-display">$0.000</span>
+        <div id="status-badge"><span class="badge-dot"></span><span id="status-text">Idle</span></div>
+    </div>
+    <div id="main">
+        <div id="left-col"></div>
+        <div id="center-col">
+            <div class="center-empty" id="center-empty">
+                <div class="big-icon">🔧</div>
+                <div class="hint">输入设计名,点击运行开始 EDA 流程</div>
+            </div>
+        </div>
+        <div id="right-col">
+            <div class="right-header">Event Timeline</div>
+            <ul id="events"></ul>
+        </div>
+    </div>
+    <script>
+        let ws = null;
+        let stepRound = {};
+        const latestCardId = {};
+        let currentStepId = null;
+        let totalCost = 0;
+
+        const stepConfig = {
+            rtl_tx:      { name: 'UART 发送器',  icon: '📤', desc: '设计 uart_tx.v' },
+            rtl_rx:      { name: 'UART 接收器',  icon: '📥', desc: '设计 uart_rx.v' },
+            rtl_top:     { name: '顶层模块',     icon: '🔗', desc: '设计 uart.v' },
+            simulate:    { name: '仿真验证',     icon: '🔬', desc: 'Verilator 仿真' },
+            debug_fix:   { name: '仿真修复',     icon: '🛠️', desc: '分析报告修复 RTL' },
+            synthesize:  { name: '逻辑综合',     icon: '⚙️', desc: 'Yosys 综合' },
+            pnr:         { name: '布局布线',     icon: '📐', desc: 'OpenROAD PnR' },
+            drc_fix:     { name: 'DRC 修复',     icon: '🔧', desc: '修复 DRC 违规' },
+            drc:         { name: 'DRC 检查',     icon: '✅', desc: 'Magic DRC' },
+            gds:         { name: 'GDS 导出',     icon: '📦', desc: '导出 GDS' },
+        };
+        const stepOrder = ['rtl_tx', 'rtl_rx', 'rtl_top', 'simulate', 'debug_fix', 'synthesize', 'pnr', 'drc_fix', 'drc', 'gds'];
+
+        function buildFlowchart() {
+            const c = document.getElementById('left-col');
+            c.innerHTML = '';
+            stepOrder.forEach(id => {
+                const cfg = stepConfig[id];
+                const n = document.createElement('div');
+                n.className = 'flow-node pending';
+                n.id = 'node-' + id;
+                n.innerHTML = `<span class="flow-node-icon">${cfg.icon}</span><div class="flow-node-info"><div class="flow-node-name">${cfg.name}</div><div class="flow-node-desc">${cfg.desc}</div></div>`;
+                c.appendChild(n);
+            });
+        }
+        buildFlowchart();
+
+        function resetFlowchart() {
+            stepOrder.forEach(id => {
+                const n = document.getElementById('node-' + id);
+                n.className = 'flow-node pending';
+            });
+        }
+
+        function setActiveNode(id) {
+            stepOrder.forEach(sid => {
+                const n = document.getElementById('node-' + sid);
+                if (sid === id) n.className = 'flow-node active';
+                else if (!n.className.includes('done')) n.className = 'flow-node pending';
+            });
+        }
+        function setDoneNode(id) {
+            const n = document.getElementById('node-' + id);
+            if (n) n.className = 'flow-node done';
+        }
+        function setFailedNode(id) {
+            const n = document.getElementById('node-' + id);
+            if (n) n.className = 'flow-node failed';
+        }
+
+        function setStatusBadge(state, text) {
+            const dot = document.querySelector('.badge-dot');
+            const colors = { idle: '#555', running: '#e94560', paused: '#ffc107', failed: '#ff4444', succeeded: '#4ecca3' };
+            dot.style.background = colors[state] || '#555';
+            document.getElementById('status-text').textContent = text;
+        }
+
+        function updateTopbarStep(id) {
+            const cfg = stepConfig[id] || { name: id, icon: '🔹' };
+            document.getElementById('current-step-icon').textContent = cfg.icon;
+            document.getElementById('current-step-name').textContent = cfg.name;
+        }
+
+        function updateCostDisplay() {
+            document.getElementById('cost-display').textContent = '$' + totalCost.toFixed(4);
+        }
+
+        function submitTask() {
+            const design = document.getElementById('design-input').value.trim();
+            if (!design) return;
+            document.getElementById('submit-btn').disabled = true;
+            fetch('/api/task', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ design: design }),
+            }).then(resp => {
+                if (resp.status === 409) {
+                    alert('已有任务在运行');
+                    document.getElementById('submit-btn').disabled = false;
+                } else if (resp.ok) {
+                    document.getElementById('events').innerHTML = '';
+                    resetFlowchart();
+                    totalCost = 0;
+                    updateCostDisplay();
+                    stepRound = {};
+                    connectWS();
+                } else {
+                    alert('启动失败');
+                    document.getElementById('submit-btn').disabled = false;
+                }
+            });
+        }
+
+        function connectWS() {
+            if (ws && ws.readyState === WebSocket.OPEN) return;
+            ws = new WebSocket('ws://' + location.host + '/ws');
+            ws.onmessage = (ev) => handleEvent(JSON.parse(ev.data));
+            ws.onclose = () => {
+                if (currentStepId !== null) {
+                    document.getElementById('submit-btn').disabled = false;
+                }
+            };
+        }
+
+        function handleEvent(event) {
+            const type = event.type;
+            if (type === 'step_progress') {
+                handleStepProgress(event);
+                return;
+            }
+            const list = document.getElementById('events');
+            const li = document.createElement('li');
+            const ts = new Date().toLocaleTimeString();
+
+            if (type === 'step_started') {
+                const sid = event.step_id;
+                const cfg = stepConfig[sid] || { name: event.step_name || sid, icon: '🔹' };
+                stepRound[sid] = (stepRound[sid] || 0) + 1;
+                currentStepId = sid;
+                li.innerHTML = `<span class="event-icon">▶</span><div class="event-body"><span class="event-text">${cfg.name} 开始</span>${stepRound[sid] > 1 ? `<div class="event-meta">round ${stepRound[sid]}</div>` : ''}</div><span class="event-ts">${ts}</span>`;
+                li.className = 'event-step_started';
+                setActiveNode(sid);
+                updateTopbarStep(sid);
+                setStatusBadge('running', 'Running');
+                initCenterForStep(sid);
+            } else if (type === 'step_finished') {
+                const sid = event.step_id;
+                const cfg = stepConfig[sid] || { name: sid, icon: '🔹' };
+                const output = event.output || '';
+                const cost = event.cost;
+                if (cost && cost.total_cost) totalCost += cost.total_cost;
+                updateCostDisplay();
+                let meta = '';
+                if (cost && cost.input_tokens > 0) meta = `${cost.input_tokens}↓ ${cost.output_tokens}↑`;
+                li.innerHTML = `<span class="event-icon">✔</span><div class="event-body"><span class="event-text">${cfg.name} 完成</span>${meta ? `<div class="event-meta">${meta}</div>` : ''}</div><span class="event-ts">${ts}</span>`;
+                li.className = 'event-step_finished';
+                setDoneNode(sid);
+                updateStepCardFinished(sid, output, cost);
+            } else if (type === 'paused') {
+                li.innerHTML = `<span class="event-icon">⏸</span><div class="event-body"><span class="event-text">暂停: ${event.reason || ''}</span></div><span class="event-ts">${ts}</span>`;
+                li.className = 'event-paused';
+                setStatusBadge('paused', 'Paused');
+            } else if (type === 'resumed') {
+                li.innerHTML = `<span class="event-icon">▶</span><div class="event-body"><span class="event-text">恢复</span></div><span class="event-ts">${ts}</span>`;
+                setStatusBadge('running', 'Running');
+            } else if (type === 'failed') {
+                li.innerHTML = `<span class="event-icon">✗</span><div class="event-body"><span class="event-text">失败: ${escapeHtml(event.error || '')}</span></div><span class="event-ts">${ts}</span>`;
+                li.className = 'event-failed';
+                if (currentStepId) setFailedNode(currentStepId);
+                setStatusBadge('failed', 'Failed');
+                document.getElementById('submit-btn').disabled = false;
+            } else if (type === 'cancelled') {
+                li.innerHTML = `<span class="event-icon">✗</span><div class="event-body"><span class="event-text">取消: ${escapeHtml(event.reason || '')}</span></div><span class="event-ts">${ts}</span>`;
+                setStatusBadge('failed', 'Cancelled');
+                document.getElementById('submit-btn').disabled = false;
+            } else {
+                li.innerHTML = `<span class="event-icon">•</span><div class="event-body"><span class="event-text">${escapeHtml(JSON.stringify(event))}</span></div><span class="event-ts">${ts}</span>`;
+            }
+            list.prepend(li);
+            while (list.children.length > 30) list.removeChild(list.lastChild);
+        }
+
+        function handleStepProgress(event) {
+            const sid = event.step_id;
+            const prog = event.progress;
+            if (!prog) return;
+            const ptype = prog.type;
+            if (ptype === 'message_end') {
+                const kind = (prog.kind || '').toLowerCase();
+                if (kind.includes('progress')) {
+                    appendStepOutput(sid, '💭 模型思考中...\n');
+                }
+            } else if (ptype === 'tool_call_start') {
+                appendStepOutput(sid, `🔧 调用工具: ${prog.name}\n`, 'tool');
+            } else if (ptype === 'tool_execution_end') {
+                if (prog.ok) {
+                    appendStepOutput(sid, `✓ ${prog.tool_name} 完成\n`, 'ok');
+                } else {
+                    appendStepOutput(sid, `✗ ${prog.tool_name} 失败: ${prog.error || ''}\n`, 'err');
+                }
+            }
+        }
+
+        function initCenterForStep(sid) {
+            const center = document.getElementById('center-col');
+            const cfg = stepConfig[sid] || { name: sid, icon: '🔹', desc: '' };
+            center.innerHTML = `
+                <div class="step-card" id="card-${sid}-${stepRound[sid]}">
+                    <div class="step-card-header">
+                        <span class="step-card-icon">${cfg.icon}</span>
+                        <span class="step-card-name">${cfg.name}</span>
+                        ${stepRound[sid] > 1 ? `<span class="step-card-round">round ${stepRound[sid]}</span>` : ''}
+                        <span class="spinner"></span>
+                    </div>
+                    <div class="step-output" id="output-${sid}-${stepRound[sid]}"></div>
+                </div>`;
+            latestCardId[sid] = `${sid}-${stepRound[sid]}`;
+        }
+
+        function appendStepOutput(sid, text, cls) {
+            const cardId = latestCardId[sid];
+            if (!cardId) return;
+            const el = document.getElementById('output-' + cardId);
+            if (!el) return;
+            const line = document.createElement('div');
+            line.className = 'tool-line ' + (cls || '');
+            line.textContent = text;
+            el.appendChild(line);
+            el.scrollTop = el.scrollHeight;
+        }
+
+        function updateStepCardFinished(sid, output, cost) {
+            const cardId = latestCardId[sid];
+            if (!cardId) return;
+            const card = document.getElementById('card-' + cardId);
+            if (!card) return;
+            // 移除 spinner
+            const spinner = card.querySelector('.spinner');
+            if (spinner) spinner.remove();
+            // 显示 output 摘要
+            if (output) {
+                const preview = output.length > 500 ? output.slice(0, 500) + '...' : output;
+                appendStepOutput(sid, '\n--- 输出 ---\n' + preview);
+            }
+            // 报告链接(对应 step 有报告文件)
+            const reportSteps = ['simulate', 'synthesize', 'pnr', 'drc', 'gds'];
+            if (reportSteps.includes(sid)) {
+                const link = document.createElement('a');
+                link.className = 'report-link';
+                link.href = `/api/report/${sid}`;
+                link.target = '_blank';
+                link.textContent = '查看完整报告 →';
+                card.appendChild(link);
+            }
+        }
+
+        function escapeHtml(s) {
+            return s.replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+        }
+
+        // 页面加载时同步一次状态
+        fetch('/api/status').then(r => r.json()).then(s => {
+            if (s.running) {
+                document.getElementById('submit-btn').disabled = true;
+                connectWS();
+            }
+        });
+    </script>
+</body>
+</html>

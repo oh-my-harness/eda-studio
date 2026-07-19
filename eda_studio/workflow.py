@@ -1,6 +1,6 @@
 """workflow 组装:WorkflowEngine 构建。senza 依赖集中在此。
 
-senza API 偏差(以实际 0.4.1 pyi/runtime 为准):
+senza API 偏差(以实际 pyi/runtime 为准):
 1. create_tool 的 parameters_schema 形参类型是 str(JSON 字符串),不是 dict。
    brief 直接传 dict 会 TypeError;此处用 json.dumps 序列化。
 2. workflow_dict 的 edges 中 `to` 必须指向 steps 里已声明的 step_id;
@@ -97,7 +97,7 @@ def _build_tools(design_dir: Path) -> list:
 
 
 def build_workflow(config: AppConfig, design_name: str) -> WorkflowEngine:
-    """构建 WorkflowEngine:8 个 step + edges + executors + tools + hooks + budget + rules。"""
+    """构建 WorkflowEngine:10 个 step + edges + executors + tools + hooks + budget + rules。"""
     design_dir = Path(f"designs/{design_name}")
     requirement = load_requirement(design_name)
     prompts = build_prompts(requirement)
@@ -106,10 +106,16 @@ def build_workflow(config: AppConfig, design_name: str) -> WorkflowEngine:
     tool_specs = _build_tools(design_dir)
 
     workflow_dict = {
-        "entry_step": "rtl_design",
+        "entry_step": "rtl_tx",
         "steps": [
-            {"id": "rtl_design", "name": "RTL 设计",
-             "prompt": prompts["rtl_design"],
+            {"id": "rtl_tx", "name": "UART 发送器设计",
+             "prompt": prompts["rtl_tx"],
+             "allowed_tools": ["write_rtl", "read_rtl", "list_design_files"]},
+            {"id": "rtl_rx", "name": "UART 接收器设计",
+             "prompt": prompts["rtl_rx"],
+             "allowed_tools": ["write_rtl", "read_rtl", "list_design_files"]},
+            {"id": "rtl_top", "name": "顶层模块设计",
+             "prompt": prompts["rtl_top"],
              "allowed_tools": ["write_rtl", "read_rtl", "list_design_files"]},
             {"id": "simulate", "name": "仿真验证", "executor": "simulate"},
             {"id": "debug_fix", "name": "仿真修复",
@@ -124,11 +130,14 @@ def build_workflow(config: AppConfig, design_name: str) -> WorkflowEngine:
             {"id": "gds", "name": "GDS 导出", "executor": "gds"},
         ],
         # edges 覆盖 judge 所有 to: 目标:
-        # rtl_design→simulate, simulate→synthesize/debug_fix, debug_fix→simulate,
+        # rtl_tx→rtl_rx, rtl_rx→rtl_top, rtl_top→simulate,
+        # simulate→synthesize/debug_fix, debug_fix→simulate,
         # synthesize→pnr/debug_fix, pnr→drc/drc_fix, drc_fix→pnr, drc→gds/drc_fix。
         # gds 之后由 judge 返回 "done" 终止,无需 to:done 边(done 非 step)。
         "edges": [
-            {"from": "rtl_design", "to": "simulate"},
+            {"from": "rtl_tx", "to": "rtl_rx"},
+            {"from": "rtl_rx", "to": "rtl_top"},
+            {"from": "rtl_top", "to": "simulate"},
             {"from": "simulate", "to": "synthesize"},
             {"from": "simulate", "to": "debug_fix"},
             {"from": "debug_fix", "to": "simulate"},
@@ -167,11 +176,11 @@ def build_workflow(config: AppConfig, design_name: str) -> WorkflowEngine:
         .with_tool(tool_specs[6])
         .with_hooks(_wrap_hooks(make_hooks(config)))
         .with_task_store(f"designs/{design_name}/.taskstore")
-        .with_max_steps(config.workflow_config.max_steps)
+        .with_max_tokens(32768)  # glm-5.2 thinking ~8K token,默认 8192 会截断导致 content/tool_call 无法输出
     )
 
     # budget + rules hooks(累加 with_hooks)
-    # senza 0.4.1 偏差:WorkflowEngine.with_hooks 只接受 list[Hook],
+    # senza 偏差:WorkflowEngine.with_hooks 只接受 list[Hook],
     # 而 create_budget_exceeded_hook 返回 BudgetExceededHook(非 Hook 子类),
     # 且 WorkflowEngine 没有 .budget()/.pricing() 注册方法(仅 HarnessBuilder 有)。
     # 因此无法直接挂载 BudgetExceededHook。这里把预算超限语义适配为
@@ -201,7 +210,7 @@ def build_workflow(config: AppConfig, design_name: str) -> WorkflowEngine:
 
     # context 变量:design_dir / docker_config / shell_config。
     # 不把整个 config 放进 context,避免 API key 落盘到 taskstore。
-    # senza 0.4.1 偏差:set_context_variable 要求 JSON 可序列化值,
+    # senza 偏差:set_context_variable 要求 JSON 可序列化值,
     # dataclass 实例(DockerConfig/ShellConfig)无法直接序列化,转 dict。
     from dataclasses import asdict
     engine.set_context_variable("design_dir", f"designs/{design_name}")

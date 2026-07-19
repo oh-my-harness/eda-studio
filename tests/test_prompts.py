@@ -1,15 +1,19 @@
-from eda_studio.prompts import RTL_DESIGN_PROMPT, DEBUG_FIX_PROMPT, DRC_FIX_PROMPT, load_requirement, build_prompts
+from eda_studio.prompts import RTL_TX_PROMPT, RTL_RX_PROMPT, RTL_TOP_PROMPT, DEBUG_FIX_PROMPT, DRC_FIX_PROMPT, load_requirement, build_prompts
 
-def test_rtl_prompt_has_requirement_placeholder():
-    assert "{requirement}" in RTL_DESIGN_PROMPT
+def test_rtl_prompts_have_requirement_placeholder():
+    assert "{requirement}" in RTL_TX_PROMPT
+    assert "{requirement}" in RTL_RX_PROMPT
+    assert "{requirement}" in RTL_TOP_PROMPT
 
 def test_debug_fix_prompt_no_duplicate_requirement():
     assert "{requirement}" not in DEBUG_FIX_PROMPT
 
 def test_build_prompts_injects_requirement():
     prompts = build_prompts("UART 9600 baud")
-    assert "UART 9600 baud" in prompts["rtl_design"]
-    assert "{requirement}" not in prompts["rtl_design"]
+    assert "UART 9600 baud" in prompts["rtl_tx"]
+    assert "UART 9600 baud" in prompts["rtl_rx"]
+    assert "UART 9600 baud" in prompts["rtl_top"]
+    assert "{requirement}" not in prompts["rtl_tx"]
     assert prompts["debug_fix"] == DEBUG_FIX_PROMPT
     assert prompts["drc_fix"] == DRC_FIX_PROMPT
 

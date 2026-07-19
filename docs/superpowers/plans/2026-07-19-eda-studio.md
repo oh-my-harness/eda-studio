@@ -6,7 +6,7 @@
 
 **Architecture:** `WorkflowEngine` 编排 8 个 step(rtl_design/simulate/debug_fix/synthesize/pnr/drc_fix/drc/gds),LLM step 用原生 `prompt`+`allowed_tools`,EDA 工具 step 用 Python 回调 executor(`run_shell` 内做白名单 + `docker exec`)。judge 用闭包计数做 per-环节 回环限制。单 provider + 单 model。
 
-**Tech Stack:** Python 3.9+, senza-sdk 0.4.1(本地 editable 安装,见 `scripts/install-senza-dev.sh`), pyyaml, Docker(`iic-osic-tools` 镜像提供 verilator/yosys/openroad/magic/klayout), SkyWater Sky130 PDK。
+**Tech Stack:** Python 3.9+, senza-sdk 0.4.2(本地 editable 安装,见 `scripts/install-senza-dev.sh`), pyyaml, fastapi, uvicorn, websockets, Docker(`iic-osic-tools` 镜像提供 verilator/yosys/openroad/magic/klayout), SkyWater Sky130 PDK。
 
 ## Global Constraints
 
@@ -81,7 +81,7 @@ name = "eda-studio"
 version = "0.1.0"
 requires-python = ">=3.9"
 dependencies = [
-    "senza-sdk>=0.4.1",
+    "senza-sdk>=0.4.2",
     "pyyaml>=6.0",
 ]
 

@@ -32,6 +32,6 @@ def test_budget_cb_logs_warning(caplog):
 def test_make_hooks_returns_three_closures():
     hooks = make_hooks(make_config())
     assert len(hooks) == 3
-    assert hooks[0]({"step_id": "x"}) is None
-    assert hooks[1]({"step_id": "x", "duration_ms": 10}) is None
-    assert hooks[2]({"tool_name": "write_rtl"}) is None
+    assert hooks[0]({"turn_index": 0}) is None
+    assert hooks[1]({"turn_index": 0}) is None
+    assert hooks[2]({"tool_name": "write_rtl"}) == "passthrough"
