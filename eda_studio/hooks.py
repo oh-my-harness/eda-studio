@@ -21,3 +21,17 @@ def make_hooks(config: AppConfig):
         return "passthrough"  # 审计只记录,不改结果
 
     return [log_before_turn, log_after_turn, audit_tool_call]
+
+
+def make_provider_response_logger():
+    """创建 after_provider_response hook,记录 HTTP 状态码/延迟/token 用量。"""
+    def log_response(ctx: dict) -> None:
+        status = ctx.get("status_code")
+        latency = ctx.get("latency_ms")
+        usage = ctx.get("usage") or {}
+        logger.info(
+            f"  provider: status={status} latency={latency}ms "
+            f"in={usage.get('input_tokens')} out={usage.get('output_tokens')} "
+            f"reasoning={usage.get('reasoning_tokens')}"
+        )
+    return log_response

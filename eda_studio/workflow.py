@@ -16,13 +16,13 @@ from senza import (
     create_judge, create_openai_provider, create_anthropic_provider,
     create_pricing_provider,
     create_before_turn_hook, create_after_turn_hook, create_after_tool_call_hook,
-    create_should_stop_hook,
+    create_after_provider_response_hook,
     create_shell_executor,
 )
 from .config import AppConfig
 from .prompts import build_prompts, load_requirement
 from .judge import make_judge_fn
-from .hooks import make_hooks
+from .hooks import make_hooks, make_provider_response_logger
 from .tools.file_tools import make_file_tools
 from .tools.report_tools import make_report_tools
 from .executors import (
@@ -179,34 +179,13 @@ def build_workflow(config: AppConfig, design_name: str) -> WorkflowEngine:
         .with_max_tokens(32768)  # glm-5.2 thinking ~8K token,默认 8192 会截断导致 content/tool_call 无法输出
     )
 
-    # budget + rules hooks(累加 with_hooks)
-    # senza 偏差:WorkflowEngine.with_hooks 只接受 list[Hook],
-    # 而 create_budget_exceeded_hook 返回 BudgetExceededHook(非 Hook 子类),
-    # 且 WorkflowEngine 没有 .budget()/.pricing() 注册方法(仅 HarnessBuilder 有)。
-    # 因此无法直接挂载 BudgetExceededHook。这里把预算超限语义适配为
-    # should_stop hook:每轮后用 engine.total_cost() 比对 limit,超限即停。
-    # engine 引用在链式构建完成后回填到 _engine_ref,should_stop 闭包通过它
-    # 读取实时 cost。
-    _engine_ref = []  # 占位,构建完成后回填 engine
-    _limit = config.budget_limit
-    _continue_on_exceed = config.budget_exceeded_action == "continue"
-
-    def _budget_should_stop(ctx: dict) -> bool:
-        eng = _engine_ref[0] if _engine_ref else None
-        if eng is None:
-            return False
-        cost = eng.total_cost().get("total_cost", 0.0)
-        if cost > _limit:
-            import logging
-            logging.getLogger(__name__).warning(
-                f"预算超限!已用 ${cost:.2f} / ${_limit:.2f}"
-            )
-            return not _continue_on_exceed  # stop→True, continue→False
-        return False
-
-    budget_hook = create_should_stop_hook(_budget_should_stop)
-    engine = engine.with_hooks([budget_hook])
-    _engine_ref.append(engine)  # 回填,供 should_stop 闭包读取
+    # budget:runtime 内置记账(budget_limit/budget_exceeded_action 配置项
+    # 仅用于 CLI 报告)。不挂 should_stop hook —— should_stop=false 语义是
+    # "强制继续 turn",不是"不超预算",会导致 EndTurn 后无限重试。
+    # provider 响应日志:记录 HTTP 状态码/延迟/token 用量(诊断用)
+    engine = engine.with_hooks([
+        create_after_provider_response_hook(make_provider_response_logger()),
+    ])
 
     # context 变量:design_dir / docker_config / shell_config。
     # 不把整个 config 放进 context,避免 API key 落盘到 taskstore。

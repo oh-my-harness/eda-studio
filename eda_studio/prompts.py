@@ -67,8 +67,7 @@ DRC_FIX_PROMPT = """DRC 检查失败了。请分析报告并修复。
 1. 用 read_drc_report 读取 DRC 报告
 2. 用 read_sdc 读取时序约束
 3. 用 read_rtl 读取相关 RTL
-4. 分析失败原因(可能是约束问题或 RTL 问题)
-5. 用 write_sdc 或 write_rtl 写入修复
+4. 用 write_sdc 或 write_rtl 写入修复
 """
 
 

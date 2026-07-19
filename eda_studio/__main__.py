@@ -16,22 +16,20 @@ senza API 偏差(以实际 pyi/runtime 为准):
            session_base_dir="sessions", env=None)
    brief 调用 WorkflowEngine.restore(store_dir, task_id, provider=...,
    model=..., judge=..., env=env) 匹配。
-4. BudgetExceededHook 非 Hook 子类,无法用 with_hooks 挂载;沿用 workflow.py
-   的 should_stop 适配方案(_re_register 不再注册 budget hook,restore 后
-   budget 检查复用同款 should_stop 逻辑由 build_workflow 已建立的 taskstore
-   之外——此处仅恢复 executors/rules/context,budget 由 runtime 内置记账)。
+4. budget 由 runtime 内置记账,不在应用层挂 hook(should_stop 做预算
+   控制会让 EndTurn 后无限继续 turn)。
 """
 import sys
 from dataclasses import asdict
 from pathlib import Path
 from senza import (
     WorkflowEngine, create_os_env, create_executor, create_judge,
-    create_should_stop_hook, create_shell_executor,
+    create_after_provider_response_hook, create_shell_executor,
 )
 from .config import load_config
 from .workflow import build_workflow, build_providers, _wrap_hooks, _build_tools
 from .judge import make_judge_fn
-from .hooks import make_hooks
+from .hooks import make_hooks, make_provider_response_logger
 from .executors import (
     simulate_executor, synthesize_executor, pnr_executor,
     drc_executor, gds_executor,
@@ -66,27 +64,11 @@ def _re_register(engine, config, design_name):
         .with_hooks(_wrap_hooks(make_hooks(config)))
     )
 
-    # budget:restore 后用 should_stop 适配(senza 无 BudgetExceededHook 挂载点)
-    _engine_ref = []
-    _limit = config.budget_limit
-    _continue_on_exceed = config.budget_exceeded_action == "continue"
-
-    def _budget_should_stop(ctx: dict) -> bool:
-        eng = _engine_ref[0] if _engine_ref else None
-        if eng is None:
-            return False
-        cost = eng.total_cost().get("total_cost", 0.0)
-        if cost > _limit:
-            import logging
-            logging.getLogger(__name__).warning(
-                f"预算超限!已用 ${cost:.2f} / ${_limit:.2f}"
-            )
-            return not _continue_on_exceed
-        return False
-
-    budget_hook = create_should_stop_hook(_budget_should_stop)
-    engine = engine.with_hooks([budget_hook])
-    _engine_ref.append(engine)
+    # budget:同 build_workflow,runtime 内置记账,不挂 should_stop hook。
+    # provider 响应日志(同 build_workflow)
+    engine = engine.with_hooks([
+        create_after_provider_response_hook(make_provider_response_logger()),
+    ])
 
     # context 变量:dataclass 需 asdict 才能 JSON 序列化
     engine.set_context_variable("design_dir", f"designs/{design_name}")
