@@ -5,8 +5,7 @@
 ## 快速开始
 
 ```bash
-# 1. 安装依赖(含 Senza 本地源码 editable 安装)
-./scripts/install-senza-dev.sh
+# 1. 安装依赖
 pip install -e .
 
 # 2. 启动 EDA 工具容器(Verilator/Yosys/OpenROAD/Magic/KLayout)

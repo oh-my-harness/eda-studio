@@ -15,7 +15,7 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 SENZA_DIR="${SENZA_DIR:-$(cd "$REPO_ROOT/../Senza" && pwd)}"
 
 if [ ! -f "$SENZA_DIR/scripts/_venv.sh" ]; then
-    echo "ERROR: $SENZA_DIR/scripts/_venv.sh 不存在（Senza 版本太旧，需要 >=0.4.2）" >&2
+    echo "ERROR: $SENZA_DIR/scripts/_venv.sh 不存在（Senza 版本太旧，需要 >=0.4.3）" >&2
     exit 1
 fi
 

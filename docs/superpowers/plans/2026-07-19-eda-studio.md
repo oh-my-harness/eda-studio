@@ -6,11 +6,11 @@
 
 **Architecture:** `WorkflowEngine` 编排 8 个 step(rtl_design/simulate/debug_fix/synthesize/pnr/drc_fix/drc/gds),LLM step 用原生 `prompt`+`allowed_tools`,EDA 工具 step 用 Python 回调 executor(`run_shell` 内做白名单 + `docker exec`)。judge 用闭包计数做 per-环节 回环限制。单 provider + 单 model。
 
-**Tech Stack:** Python 3.9+, senza-sdk 0.4.2(本地 editable 安装,见 `scripts/install-senza-dev.sh`), pyyaml, fastapi, uvicorn, websockets, Docker(`iic-osic-tools` 镜像提供 verilator/yosys/openroad/magic/klayout), SkyWater Sky130 PDK。
+**Tech Stack:** Python 3.9+, senza-sdk 0.4.3(PyPI 安装), pyyaml, fastapi, uvicorn, websockets, Docker(`iic-osic-tools` 镜像提供 verilator/yosys/openroad/magic/klayout), SkyWater Sky130 PDK。
 
 ## Global Constraints
 
-- **senza 安装**:`./scripts/install-senza-dev.sh` 从本地 `../Senza` editable 安装(`maturin develop`)。Senza 的 Cargo.toml 用 git rev 锁定 runtime(`senza-pkg/runtime.lock`,当前 `94c6be8`),从 GitHub fetch,不依赖本地 runtime checkout。
+- **senza 安装**:`pip install senza-sdk` 从 PyPI 安装。如需本地开发 Senza,见 `scripts/install-senza-dev.sh`。Senza 的 Cargo.toml 用 git rev 锁定 runtime(`senza-pkg/runtime.lock`),从 GitHub fetch,不依赖本地 runtime checkout。
 - **单 provider + 单 model**:`WorkflowEngine.__init__(workflow_dict, provider, model, judge, env=env)` 只接受一个 provider/model。所有 LLM step 共用。
 - **EDA 工具用 Python 回调 executor,不用 ShellExecutor**:`ShellExecutor` 白名单按 command 名过滤,Docker 场景下 command 都是 `docker`,无法区分 `verilator` vs `rm`。`ShellExecutor` 仅用于教学示例 step(简单 `echo`)。
 - **`with_max_retries` 不限制 `to:` 回环**:EDA 的「失败→debug_fix→重跑」是 `to:` 转换,`with_max_retries(N)` 只限制连续 `Transition::Retry`(judge 返回 `"retry"`)。per-环节 限制由 judge 闭包计数实现,`with_max_steps(50)` 兜底防死循环。
@@ -81,7 +81,7 @@ name = "eda-studio"
 version = "0.1.0"
 requires-python = ">=3.9"
 dependencies = [
-    "senza-sdk>=0.4.2",
+    "senza-sdk>=0.4.3",
     "pyyaml>=6.0",
 ]
 

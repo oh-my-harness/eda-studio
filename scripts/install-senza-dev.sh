@@ -33,7 +33,7 @@ if [ ! -d "$SENZA_DIR" ]; then
     exit 1
 fi
 if [ ! -f "$SENZA_DIR/scripts/_venv.sh" ]; then
-    echo "ERROR: $SENZA_DIR/scripts/_venv.sh 不存在（Senza 版本太旧，需要 >=0.4.2）" >&2
+    echo "ERROR: $SENZA_DIR/scripts/_venv.sh 不存在（Senza 版本太旧，需要 >=0.4.3）" >&2
     exit 1
 fi
 
