@@ -83,7 +83,7 @@ def create_app(
                 content={"error": "a task is already running"},
             )
 
-        state.task_running = True
+        state.design_name = req.design
 
         def _run_in_background():
             try:
