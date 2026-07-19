@@ -136,7 +136,7 @@ def test_simulate_sim_out_not_whitelisted(tmp_path, monkeypatch):
     assert sp_run.call_count == 1
     docker_cmd = sp_run.call_args[0][0]
     assert docker_cmd[0] == "docker" and "exec" in docker_cmd
-    assert docker_cmd[-1] == "./sim_out"
+    assert docker_cmd[-1] == "./obj_dir/sim_out"
     assert r["structured"]["success"] is True
 
 def test_drc_nonzero_returncode_fails(tmp_path, monkeypatch):

@@ -158,6 +158,11 @@ def _run_with_events(engine, design_name: str) -> None:
 
 
 def cmd_run(design_name: str, config_path: str):
+    import logging as _logging
+    _logging.basicConfig(
+        level=_logging.INFO,
+        format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+    )
     config = load_config(config_path)
     engine = build_workflow(config, design_name)
     print(f"启动 {design_name} 设计流程...")

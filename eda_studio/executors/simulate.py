@@ -40,12 +40,14 @@ def simulate_executor(ctx: dict) -> dict:
     sim_dir.mkdir(parents=True, exist_ok=True)
     try:
         result = run_shell(cmd, cwd=sim_dir, docker_config=docker_cfg, shell_config=shell_cfg)
-        # sim_out 是编译产物不是工具,直接 docker exec 跑,绕过白名单
+        # sim_out 是编译产物不是工具,直接 docker exec 跑,绕过白名单。
+        # verilator --binary -o sim_out 把二进制放在 obj_dir/sim_out 下,
+        # 不是 sim_dir/sim_out。
         container_cwd = to_container_cwd(sim_dir, docker_cfg)
         run_docker_cmd = [
             "docker", "exec", "-w", container_cwd,
             docker_cfg.container,
-            "bash", "-lc", "./sim_out",
+            "bash", "-lc", "./obj_dir/sim_out",
         ]
         run_result = subprocess.run(run_docker_cmd, capture_output=True, text=True, timeout=600)
     except subprocess.TimeoutExpired:
