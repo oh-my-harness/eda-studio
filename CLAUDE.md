@@ -101,3 +101,145 @@ docker start eda-tools
 docker rm -f eda-tools
 docker run -d --name eda-tools -v $(pwd)/designs:/work/designs -e PDK=sky130A hpretl/iic-osic-tools:latest --skip sleep infinity
 ```
+
+
+---
+
+## Senza SDK 依赖
+
+### 版本
+
+- **senza-sdk 0.4.0**（PyPI 已发布，`pip install senza-sdk`）
+- 包含 G1 Budget、G2 Pricing、G3 Rules 全部新 API（`feat/senza-api-exposure` 分支已合并到 Senza main）
+- import 名：`senza`（包名 `senza-sdk`）
+- abi3 wheel，支持 Python 3.9–3.14+
+
+### G1/G2/G3 API 清单（已验证可用）
+
+```python
+import senza
+
+# G1: Budget 控制
+senza.create_budget_exceeded_hook(callback)  # cb(cost: dict, limit: float) -> bool
+# builder.budget(limit, exceeded_hook)  # AgentHarness 级
+# workflow 级通过 with_hooks([budget_hook]) 注入（budget_hook impl ShouldStopHook）
+
+# G2: Pricing
+senza.create_pricing_provider(table: dict)           # 静态定价表
+senza.create_pricing_provider_callback(cb)           # 动态定价 cb(model, provider) -> dict|None
+# builder.pricing(provider)  # 设置后 usage()["total_cost"] 才有值
+
+# G3: Rules 审批
+senza.create_rule_chain() -> RuleChainBuilder
+senza.create_contains_predicate(allowed: list[str])
+senza.create_regex_field_predicate(arg_path: str, pattern: str)
+senza.create_number_range_predicate(arg_path: str, min: float, max: float)
+senza.create_rate_limit_predicate(max: int, window_seconds: float)
+senza.create_rule_approval_hook(chain: RuleChain)   # impl BeforeToolCallHook
+# RuleChainBuilder.rule(tool_name, predicate, on_match).fallback(decision).build()
+# on_match/decision: "allow" / "deny"
+```
+
+### Senza 仓库关系
+
+- Senza 源码：`../Senza/`（同级目录 `oh-my-harness/Senza`）
+- 本项目是 Senza 的**消费者**，不修改 Senza 源码
+- 设计文档存放在 Senza 仓库：`../Senza/docs/superpowers/specs/2026-07-18-eda-studio-design.md`
+- 如需调试 Senza 本身，在 Senza 仓库的 `.venv` 中 `pip install -e .`
+
+---
+
+## 架构关键约定
+
+### 两层集成模式
+
+外层 `WorkflowEngine` 编排流程节点和路由，每个 LLM 步骤**内嵌一个 `AgentHarness`**。
+
+**关键设计决策**：所有 LLM 步骤（rtl_design / debug_fix / drc_fix）实现为 **executor 步骤**，内部实例化 AgentHarness。原因：
+
+1. workflow 定义统一（全是 executor 步骤，无 LLM step/executor 混用）
+2. AgentHarness 可自由配置（专属 system prompt、tools、model、pricing）
+3. judge 逻辑统一（只看 executor 返回的 dict，不区分步骤类型）
+4. 展示了 `create_executor(cb)` 包装 AgentHarness 的模式
+
+### Workflow 节点
+
+| 节点 | 类型 | 职责 |
+|------|------|------|
+| `rtl_design` | executor（内嵌 AgentHarness） | LLM 根据需求生成 Verilog RTL |
+| `simulate` | executor | verilator 编译+仿真 |
+| `debug_fix` | executor（内嵌 AgentHarness） | LLM 读仿真报告/波形，修复 RTL |
+| `synthesize` | executor | yosys 综合，输出 netlist |
+| `pnr` | executor | OpenROAD floorplan→routing |
+| `drc_fix` | executor（内嵌 AgentHarness） | LLM 读 DRC 报告，修复约束/RTL |
+| `drc` | executor | DRC/LVS 检查（magic/netgen） |
+| `gds` | executor | 导出 GDSII（klayout） |
+
+### Judge 路由
+
+- 仿真失败 → `debug_fix` → 重跑 `simulate`（max_retries=3）
+- DRC 失败 → `drc_fix` → 重跑 `pnr`（max_retries=3）
+- 超过重试次数 → `abort:done`
+
+### EDA 工具调用安全
+
+EDA 工具**不作为 LLM tool**（太危险），而是作为 executor 步骤由 workflow 编排固定调用。LLM 只能通过 file_tools（读写文件）和 report_tools（读报告摘要）操作。G3 Rules 审批链作为额外防护层。
+
+---
+
+## 实现顺序
+
+按设计文档 §12，分阶段实现：
+
+| 阶段 | 内容 | 依赖 |
+|------|------|------|
+| P1 | 项目骨架 + `config.py` + CLI `__main__.py` | 无 |
+| P2 | `tools/` + `agents/`（AgentHarness 工厂） | P1 |
+| P3 | `executors/`（5 个 EDA executor + 3 个 LLM executor） | P2 |
+| P4 | `workflow.py` + `judge.py`（路由逻辑） | P3 |
+| P5 | `hooks.py` + `rules.py` + budget | P4 |
+| P6 | 崩溃恢复 + CLI restore 命令 | P4 |
+| P7 | UART 设计需求 + testbench | P5 |
+| P8 | 端到端运行 + 验收 S1-S7 | P7 |
+| P9 | 测试套件 | P8 |
+
+---
+
+## 成功标准（验收用）
+
+| # | 标准 | 验证方式 |
+|---|------|---------|
+| S1 | `python -m eda_studio run uart` 从零产出 GDSII | `designs/uart/gds/*.gds` 存在 |
+| S2 | 仿真失败时 LLM 修复 RTL，回环到 simulate | step_history 有 debug_fix → simulate |
+| S3 | DRC 失败时 LLM 修复，回环到 pnr | step_history 有 drc_fix → pnr |
+| S4 | 中断后 restore 能从断点继续 | 模拟 Ctrl+C 后 restore，current_step 正确 |
+| S5 | 成本超限时流程停止 | 设 budget=0.01，state="failed" + usage 有值 |
+| S6 | 危险 shell 命令被 rules 拦截 | 构造恶意 tool call，被 deny |
+| S7 | 多 provider 配置生效 | usage()["by_model"] 有多个模型 |
+
+---
+
+## 开发环境
+
+- **Python**: 3.9+（宿主机 3.9.6，容器内 3.12）
+- **宿主机**: macOS arm64（Apple Silicon）
+- **Docker**: Docker Desktop 29.5.2
+- **venv**: 在项目根目录创建 `.venv`
+  ```bash
+  python3 -m venv .venv
+  source .venv/bin/activate
+  pip install -e .
+  ```
+- **测试**: `pytest`，不依赖真实 EDA 工具和 LLM API（用 mock executor + mock agent）
+
+---
+
+## 不做的事
+
+- 不修改 Senza 源码（本项目是纯消费者）
+- 不做 EDA 工具安装脚本（用 Docker 镜像）
+- 不追求工业级 PPA 优化（教学项目）
+- 不做 Web UI（纯 CLI + 文件产物）
+- 不做 CI（依赖 Docker 容器和 LLM API）
+- 不支持模拟电路设计
+- 不做多工艺库切换（只用 Sky130）
