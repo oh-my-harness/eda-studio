@@ -24,6 +24,9 @@ from .config import AppConfig
 from .prompts import build_prompts, load_requirement
 from .judge import make_judge_fn
 from .hooks import make_hooks, make_provider_response_logger, make_empty_response_nudge_hooks
+from .plugin import (
+    create_system_prompt_plugin, RTL_SYSTEM, DEBUG_FIX_SYSTEM, DRC_FIX_SYSTEM,
+)
 from .tools.file_tools import make_file_tools
 from .tools.report_tools import make_report_tools
 from .executors import (
@@ -188,7 +191,7 @@ def build_workflow(config: AppConfig, design_name: str) -> WorkflowEngine:
         .with_tool(tool_specs[6])
         .with_hooks(_wrap_hooks(make_hooks(config)))
         .with_task_store(f"designs/{design_name}/.taskstore")
-        .with_max_tokens(32768)  # glm-5.2 thinking ~8K token,默认 8192 会截断导致 content/tool_call 无法输出
+        .with_max_tokens(8192)  # 与 omp 一致;32768 会让 glm-5.2 thinking 过长导致连接超时
         .with_max_retries(config.workflow_config.max_fix_retries)  # judge 返回 "retry" 时的重试上限
     )
 
@@ -202,6 +205,13 @@ def build_workflow(config: AppConfig, design_name: str) -> WorkflowEngine:
         create_transform_context_hook(nudge_transform_cb),
         create_after_provider_response_hook(make_provider_response_logger()),
     ])
+
+    # system_prompt plugin:每个 LLM step 都要有 system prompt,
+    # 告诉模型角色和必须调工具(无 system prompt 时 glm-5.2 会只 thinking 不调工具)
+    for m in dcfg.modules:
+        engine = engine.with_step_plugin(f"rtl_{m.id}", create_system_prompt_plugin(RTL_SYSTEM))
+    engine = engine.with_step_plugin("debug_fix", create_system_prompt_plugin(DEBUG_FIX_SYSTEM))
+    engine = engine.with_step_plugin("drc_fix", create_system_prompt_plugin(DRC_FIX_SYSTEM))
 
     # context 变量:design_dir / docker_config / shell_config。
     # 不把整个 config 放进 context,避免 API key 落盘到 taskstore。
