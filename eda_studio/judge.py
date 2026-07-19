@@ -16,15 +16,26 @@ def make_judge_fn(config: AppConfig):
         step_id = ctx["step_id"]
         structured = ctx.get("structured") or {}
         success = structured.get("success", False)
+        retry_count = ctx.get("retry_count", 0)
+        # RTL 步骤:output 非空表示模型产出了设计说明或调了工具,视为完成。
+        # output 空时 retry 让模型重试(有 max_retries 兜底),而非直接 abort。
+        rtl_done = bool(ctx.get("output"))
+        rtl_retry_exhausted = retry_count >= max_fix
 
         if step_id == "rtl_tx":
-            return "to:rtl_rx" if ctx.get("output") else "abort:done"
+            if rtl_done:
+                return "to:rtl_rx"
+            return "abort:done" if rtl_retry_exhausted else "retry"
 
         if step_id == "rtl_rx":
-            return "to:rtl_top" if ctx.get("output") else "abort:done"
+            if rtl_done:
+                return "to:rtl_top"
+            return "abort:done" if rtl_retry_exhausted else "retry"
 
         if step_id == "rtl_top":
-            return "to:simulate" if ctx.get("output") else "abort:done"
+            if rtl_done:
+                return "to:simulate"
+            return "abort:done" if rtl_retry_exhausted else "retry"
 
         if step_id == "simulate":
             if success:
