@@ -111,6 +111,18 @@ def create_app(
     async def get_status():
         return JSONResponse(status_code=200, content=state.status_snapshot())
 
+    # ── GET /api/designs ────────────────────────────────────────
+    @app.get("/api/designs")
+    async def list_designs():
+        """列出可用的 design 模板(eda_studio/templates/ 下的子目录)。"""
+        import importlib.resources as resources
+        try:
+            pkg_root = resources.files("eda_studio") / "templates"
+            names = sorted([p.name for p in pkg_root.iterdir() if p.is_dir() and not p.name.startswith("_")])
+        except Exception:
+            names = []
+        return JSONResponse(status_code=200, content={"designs": names})
+
     # ── GET /api/workflow-steps ────────────────────────────────
     @app.get("/api/workflow-steps")
     async def get_workflow_steps():

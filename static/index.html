@@ -85,7 +85,7 @@
 <body>
     <div id="topbar">
         <span class="logo">🔧 EDA Studio</span>
-        <input id="design-input" value="uart" placeholder="design name">
+        <select id="design-input"><option value="uart">uart</option></select>
         <button id="submit-btn" onclick="submitTask()">运行</button>
         <div class="topbar-divider"></div>
         <div id="current-step-display">
@@ -139,6 +139,16 @@
             });
         }
         // buildFlowchart() 在 submitTask 时从 /api/workflow-steps 加载后调用
+        // 页面加载时填充 design 下拉
+        fetch('/api/designs').then(r => r.json()).then(data => {
+            const sel = document.getElementById('design-input');
+            sel.innerHTML = '';
+            (data.designs || []).forEach(name => {
+                const opt = document.createElement('option');
+                opt.value = name; opt.textContent = name;
+                sel.appendChild(opt);
+            });
+        });
 
         function resetFlowchart() {
             stepOrder.forEach(id => {
