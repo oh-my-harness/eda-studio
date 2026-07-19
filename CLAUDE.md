@@ -263,7 +263,7 @@ pip install -e .
 ./scripts/install-senza-dev.sh   # 重新 maturin develop，增量编译
 ```
 
-前提：`../Senza` 和 `../llm-harness-runtime` 是同级 checkout。脚本读 `../Senza/senza-pkg/runtime.lock` 确定 runtime pin。
+前提：`../Senza` 是同级 checkout。Senza 的 Cargo.toml 用 git 依赖锁定 runtime 到 `runtime.lock` 里的 commit（当前 `94c6be8`），从 GitHub fetch——**不是本地 path 依赖**。若要升级 runtime，在 Senza 仓库更新 `senza-pkg/runtime.lock` 到新 commit。`../llm-harness-runtime` 仅用于读源码理解行为，不参与构建。
 
 - **测试**: `pytest`，不依赖真实 EDA 工具和 LLM API（用 mock executor + mock agent）
 
