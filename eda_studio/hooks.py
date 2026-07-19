@@ -31,7 +31,24 @@ def make_hooks(config: AppConfig):
 
     def log_after_turn(ctx: dict) -> None:
         turn = ctx.get("turn_index", "?")
-        logger.info(f"✓ turn {turn} 完成")
+        new_msgs = ctx.get("new_messages") or []
+        # 找最后一条 assistant 消息,记录其 content 摘要(诊断空响应用)
+        for m in reversed(new_msgs):
+            if m.get("role") == "assistant":
+                content = m.get("content", [])
+                if isinstance(content, list):
+                    types = [b.get("type", "?") for b in content]
+                    text_preview = ""
+                    for b in content:
+                        if b.get("type") == "text":
+                            text_preview = (b.get("text", "") or "")[:200]
+                            break
+                    logger.info(f"✓ turn {turn} 完成 content={types} text={text_preview!r}")
+                else:
+                    logger.info(f"✓ turn {turn} 完成 content={str(content)[:200]!r}")
+                break
+        else:
+            logger.info(f"✓ turn {turn} 完成 (无 assistant 消息)")
 
     def audit_tool_call(ctx: dict) -> str:
         tool_name = ctx.get("tool_name", "")
