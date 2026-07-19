@@ -24,12 +24,13 @@ from dataclasses import asdict
 from pathlib import Path
 from senza import (
     WorkflowEngine, create_os_env, create_executor, create_judge,
+    create_should_stop_hook, create_transform_context_hook,
     create_after_provider_response_hook, create_shell_executor,
 )
 from .config import load_config
 from .workflow import build_workflow, build_providers, _wrap_hooks, _build_tools
 from .judge import make_judge_fn
-from .hooks import make_hooks, make_provider_response_logger
+from .hooks import make_hooks, make_provider_response_logger, make_empty_response_nudge_hooks
 from .executors import (
     simulate_executor, synthesize_executor, pnr_executor,
     drc_executor, gds_executor,
@@ -63,10 +64,13 @@ def _re_register(engine, config, design_name):
         .with_tool(tools[6])
         .with_hooks(_wrap_hooks(make_hooks(config)))
     )
-
-    # budget:同 build_workflow,runtime 内置记账,不挂 should_stop hook。
-    # provider 响应日志(同 build_workflow)
+    # 空响应纠正 + provider 日志(同 build_workflow)
+    should_stop_cb, nudge_transform_cb = make_empty_response_nudge_hooks(
+        max_retries=config.workflow_config.max_fix_retries
+    )
     engine = engine.with_hooks([
+        create_should_stop_hook(should_stop_cb),
+        create_transform_context_hook(nudge_transform_cb),
         create_after_provider_response_hook(make_provider_response_logger()),
     ])
 

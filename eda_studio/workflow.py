@@ -17,12 +17,13 @@ from senza import (
     create_pricing_provider,
     create_before_turn_hook, create_after_turn_hook, create_after_tool_call_hook,
     create_after_provider_response_hook,
+    create_should_stop_hook, create_transform_context_hook,
     create_shell_executor,
 )
 from .config import AppConfig
 from .prompts import build_prompts, load_requirement
 from .judge import make_judge_fn
-from .hooks import make_hooks, make_provider_response_logger
+from .hooks import make_hooks, make_provider_response_logger, make_empty_response_nudge_hooks
 from .tools.file_tools import make_file_tools
 from .tools.report_tools import make_report_tools
 from .executors import (
@@ -180,11 +181,15 @@ def build_workflow(config: AppConfig, design_name: str) -> WorkflowEngine:
         .with_max_retries(config.workflow_config.max_fix_retries)  # judge 返回 "retry" 时的重试上限
     )
 
-    # budget:runtime 内置记账(budget_limit/budget_exceeded_action 配置项
-    # 仅用于 CLI 报告)。不挂 should_stop hook —— should_stop=false 语义是
-    # "强制继续 turn",不是"不超预算",会导致 EndTurn 后无限重试。
+    # 空响应纠正:模型 EndTurn 没调工具 → should_stop 返回 False(继续 turn)
+    # + transform_context 注入 nudge(响应式反馈)。有 max_retries 兜底。
+    should_stop_cb, nudge_transform_cb = make_empty_response_nudge_hooks(
+        max_retries=config.workflow_config.max_fix_retries
+    )
     # provider 响应日志:记录 HTTP 状态码/延迟/token 用量(诊断用)
     engine = engine.with_hooks([
+        create_should_stop_hook(should_stop_cb),
+        create_transform_context_hook(nudge_transform_cb),
         create_after_provider_response_hook(make_provider_response_logger()),
     ])
 
