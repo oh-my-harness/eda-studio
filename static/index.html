@@ -151,8 +151,14 @@
         });
 
         function resetFlowchart() {
+            // 如果流程图没建过,或 node 数量与 stepOrder 不匹配(竞态),重建
+            const existingNodes = document.querySelectorAll('.flow-node').length;
+            if (existingNodes !== stepOrder.length) {
+                buildFlowchart();
+            }
             stepOrder.forEach(id => {
                 const n = document.getElementById('node-' + id);
+                if (!n) return;
                 n.className = 'flow-node pending';
                 n.dataset.done = '';
                 n.dataset.failed = '';
@@ -254,6 +260,10 @@
                 handleStepProgress(event);
                 return;
             }
+            const list = document.getElementById('events');
+            const li = document.createElement('li');
+            const ts = new Date().toLocaleTimeString();
+
             if (type === 'step_started') {
                 const sid = event.step_id;
                 // 如果 step 不在预加载列表(异步竞态),动态补加
