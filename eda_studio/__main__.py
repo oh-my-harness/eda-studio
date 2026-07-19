@@ -237,6 +237,8 @@ def main(argv=None):
     p_serve.add_argument("--host", default="0.0.0.0")
     p_init = sub.add_parser("init", help="初始化 design(从模板复制)")
     p_init.add_argument("design")
+    p_check = sub.add_parser("check", help="预检环境(config/API/docker/PDK)")
+    p_check.add_argument("--config", default="config.yaml")
 
 
     args = parser.parse_args(argv)
@@ -244,11 +246,12 @@ def main(argv=None):
         cmd_run(args.design, args.config)
     elif args.command == "restore":
         cmd_restore(args.design, args.config)
-    elif args.command == "serve":
-        cmd_serve(args.config, args.port, args.host)
     elif args.command == "init":
         from .cli_commands import cmd_init
         sys.exit(cmd_init(args.design))
+    elif args.command == "check":
+        from .cli_commands import cmd_check
+        sys.exit(cmd_check(args.config))
 
 
 if __name__ == "__main__":

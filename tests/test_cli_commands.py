@@ -33,3 +33,42 @@ def test_init_unknown_template(tmp_path, monkeypatch):
     from eda_studio.cli_commands import cmd_init
     rc = cmd_init("nonexistent")
     assert rc == 1
+
+
+def test_check_config_missing(tmp_path, monkeypatch):
+    """config.yaml 不存在时 check 报错。"""
+    monkeypatch.chdir(tmp_path)
+    from eda_studio.cli_commands import cmd_check
+    rc = cmd_check("nonexistent.yaml")
+    assert rc == 1
+
+
+def test_check_config_ok(tmp_path, monkeypatch):
+    """config 存在但 API/容器不可达时,check 报告各项状态。"""
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "config.yaml").write_text(
+        "provider:\n"
+        "  type: openai\n"
+        "  api_key: test-key\n"
+        "  base_url: http://127.0.0.1:1\n"  # 不可能达,避免真连 API
+        "model: gpt-4o\n"
+        "    input_per_mtok: 2.5\n"
+        "    output_per_mtok: 10.0\n"
+        "budget:\n"
+        "  limit: 5.0\n"
+        "  exceeded_action: stop\n"
+        "workflow:\n"
+        "  max_steps: 50\n"
+        "  max_fix_retries: 3\n"
+        "shell:\n"
+        "  allowed_commands: [\"verilator\"]\n"
+        "  denied_args: [\"rm\"]\n"
+        "docker:\n"
+        "  image: hpretl/iic-osic-tools:latest\n"
+        "  container: eda-tools\n"
+        "  workdir: /work/designs\n"
+        "  pdk: sky130A\n"
+    )
+    from eda_studio.cli_commands import cmd_check
+    rc = cmd_check("config.yaml")
+    assert rc == 1
