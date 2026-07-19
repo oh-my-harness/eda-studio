@@ -1,6 +1,6 @@
 """yosys 综合 executor。"""
 from pathlib import Path
-from ..shell_safety import run_shell, ShellSafetyError
+from ..shell_safety import run_shell, to_container_path, ShellSafetyError
 
 
 def synthesize_executor(ctx: dict) -> dict:
@@ -13,10 +13,14 @@ def synthesize_executor(ctx: dict) -> dict:
     json_out = synth_dir / "netlist.json"
     v_out = synth_dir / "netlist.v"
 
+    # 路径参数转容器内绝对路径(run_shell 只转 cwd,不转 cmd 参数)
+    rtl_paths = " ".join(to_container_path(f, docker_cfg) for f in rtl_files)
+    json_path = to_container_path(json_out, docker_cfg)
+    v_path = to_container_path(v_out, docker_cfg)
     script = (
-        f"read_verilog {' '.join(str(f.relative_to(design_dir.parent)) for f in rtl_files)}; "
+        f"read_verilog {rtl_paths}; "
         f"synth -top uart; stat; "
-        f"write_json {json_out}; write_verilog {v_out}"
+        f"write_json {json_path}; write_verilog {v_path}"
     )
     try:
         result = run_shell(["yosys", "-q", "-p", script], cwd=synth_dir,

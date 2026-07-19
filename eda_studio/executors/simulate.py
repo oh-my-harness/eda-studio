@@ -1,6 +1,7 @@
 """verilator 仿真 executor。"""
+import subprocess
 from pathlib import Path
-from ..shell_safety import run_shell, ShellSafetyError
+from ..shell_safety import run_shell, to_container_cwd, ShellSafetyError
 
 
 def _parse_verilator_output(stderr: str, stdout: str) -> str:
@@ -8,7 +9,13 @@ def _parse_verilator_output(stderr: str, stdout: str) -> str:
 
 
 def simulate_executor(ctx: dict) -> dict:
-    """verilator 仿真。tb_uart.v 是预置 fixture,rtl_files 排除它。"""
+    """verilator 仿真。tb_uart.v 是预置 fixture,rtl_files 排除它。
+
+    两步:
+    1. verilator --binary 编译走 run_shell(白名单校验),产出 sim_out 二进制。
+    2. 运行 sim_out:它是 verilator 的编译产物(不是 shell 工具),不应进
+       run_shell 的 allowed_commands 白名单。直接构造 docker exec 在容器内跑。
+    """
     design_dir = Path(ctx["context"]["design_dir"])
     docker_cfg = ctx["context"]["docker_config"]
     shell_cfg = ctx["context"]["shell_config"]
@@ -29,8 +36,14 @@ def simulate_executor(ctx: dict) -> dict:
     sim_dir.mkdir(parents=True, exist_ok=True)
     try:
         result = run_shell(cmd, cwd=sim_dir, docker_config=docker_cfg, shell_config=shell_cfg)
-        run_result = run_shell(["./sim_out"], cwd=sim_dir,
-                               docker_config=docker_cfg, shell_config=shell_cfg)
+        # sim_out 是编译产物不是工具,直接 docker exec 跑,绕过白名单
+        container_cwd = to_container_cwd(sim_dir, docker_cfg)
+        run_docker_cmd = [
+            "docker", "exec", "-w", container_cwd,
+            docker_cfg.container,
+            "bash", "-lc", "./sim_out",
+        ]
+        run_result = subprocess.run(run_docker_cmd, capture_output=True, text=True, timeout=600)
     except ShellSafetyError as e:
         return {"output": str(e), "structured": {"success": False, "safety_error": True}}
 

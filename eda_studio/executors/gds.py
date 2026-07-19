@@ -1,6 +1,6 @@
 """klayout 导出 GDSII executor。"""
 from pathlib import Path
-from ..shell_safety import run_shell, ShellSafetyError
+from ..shell_safety import run_shell, to_container_path, ShellSafetyError
 
 
 def gds_executor(ctx: dict) -> dict:
@@ -12,9 +12,12 @@ def gds_executor(ctx: dict) -> dict:
     gds_dir.mkdir(parents=True, exist_ok=True)
     gds_out = gds_dir / "uart.gds"
 
+    # 路径参数转容器内绝对路径
+    def_path = to_container_path(def_file, docker_cfg)
+    gds_path = to_container_path(gds_out, docker_cfg)
     tcl = f"""
-load {def_file}
-gds write {gds_out}
+load {def_path}
+gds write {gds_path}
 exit
 """
     try:

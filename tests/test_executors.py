@@ -37,7 +37,11 @@ def test_simulate_success(tmp_path, monkeypatch):
     (rtl / "uart.v").write_text("module uart; endmodule")
     (rtl / "tb_uart.v").write_text("`timescale 1ns/1ps module tb_uart; endmodule")
     d = tmp_path / "designs" / "uart"
-    with patch("eda_studio.executors.simulate.run_shell", side_effect=[fake_completed(returncode=0), fake_completed(stdout="TEST PASSED", returncode=0)]):
+    # 编译走 run_shell(白名单),sim_out 直接 subprocess.run(产物非工具,绕过白名单)
+    with patch("eda_studio.executors.simulate.run_shell",
+               return_value=fake_completed(returncode=0)), \
+         patch("eda_studio.executors.simulate.subprocess.run",
+               return_value=fake_completed(stdout="TEST PASSED", returncode=0)):
         r = simulate_executor(make_ctx(d))
     assert r["structured"]["success"] is True
     assert (d / "sim" / "report.txt").exists()
@@ -109,3 +113,39 @@ def test_gds_success(tmp_path, monkeypatch):
         r = gds_executor(make_ctx(d))
     assert r["structured"]["success"] is True
     assert r["structured"]["gds_path"].endswith("uart.gds")
+
+def test_simulate_sim_out_not_whitelisted(tmp_path, monkeypatch):
+    """P1: sim_out 是 verilator 产物,不走 run_shell 白名单,直接 subprocess.run。"""
+    monkeypatch.chdir(tmp_path)
+    rtl = tmp_path / "designs" / "uart" / "rtl"
+    rtl.mkdir(parents=True)
+    (rtl / "uart.v").write_text("module uart; endmodule")
+    (rtl / "tb_uart.v").write_text("x")
+    d = tmp_path / "designs" / "uart"
+    run_calls = []
+    def fake_run_shell(cmd, **kw):
+        run_calls.append(cmd[0])
+        return fake_completed(returncode=0)
+    with patch("eda_studio.executors.simulate.run_shell", side_effect=fake_run_shell), \
+         patch("eda_studio.executors.simulate.subprocess.run",
+               return_value=fake_completed(stdout="TEST PASSED", returncode=0)) as sp_run:
+        r = simulate_executor(make_ctx(d))
+    # run_shell 只被调用一次(编译),不包含 sim_out
+    assert run_calls == ["verilator"]
+    # subprocess.run 被调用一次跑 sim_out
+    assert sp_run.call_count == 1
+    docker_cmd = sp_run.call_args[0][0]
+    assert docker_cmd[0] == "docker" and "exec" in docker_cmd
+    assert docker_cmd[-1] == "./sim_out"
+    assert r["structured"]["success"] is True
+
+def test_drc_nonzero_returncode_fails(tmp_path, monkeypatch):
+    """P3: 工具异常退出(returncode!=0)即使无 violation 字样也判失败。"""
+    monkeypatch.chdir(tmp_path)
+    d = tmp_path / "designs" / "uart" / "pnr"
+    d.mkdir(parents=True)
+    (d / "uart_pnr.def").write_text("x")
+    with patch("eda_studio.executors.drc.run_shell",
+               return_value=fake_completed(stdout="magic crashed", returncode=1)):
+        r = drc_executor({"context": {"design_dir": str(d.parent), "docker_config": DOCKER, "shell_config": SHELL}})
+    assert r["structured"]["success"] is False
