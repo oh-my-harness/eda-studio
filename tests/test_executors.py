@@ -22,6 +22,18 @@ def fake_completed(stdout="", stderr="", returncode=0):
     r.returncode = returncode
     return r
 
+def fake_pdk_find(*args, **kwargs):
+    """Mock subprocess.run 返回假 PDK 路径(pnr/drc/gds 用 docker exec ls 查 PDK)。
+    pnr 一次 ls 查 3 个文件(.lib/.lef/.tlef),按扩展名拆分。"""
+    r = MagicMock()
+    r.stdout = "/fake/pdk/sky130_fd_sc_hd__tt_025C_1v80.lib\n" \
+               "/fake/pdk/sky130_fd_sc_hd.lef\n" \
+               "/fake/pdk/sky130_fd_sc_hd__nom.tlef\n" \
+               "/fake/pdk/sky130_fd_sc_hd.gds\n"
+    r.stderr = ""
+    r.returncode = 0
+    return r
+
 def test_simulate_missing_tb(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     (tmp_path / "designs" / "uart" / "rtl").mkdir(parents=True)
@@ -77,7 +89,8 @@ def test_pnr_success(tmp_path, monkeypatch):
     d = tmp_path / "designs" / "uart"
     (d / "synth").mkdir(parents=True)
     (d / "synth" / "netlist.v").write_text("module uart; endmodule")
-    with patch("eda_studio.executors.pnr.run_shell", return_value=fake_completed(returncode=0)):
+    with patch("eda_studio.executors.pnr.run_shell", return_value=fake_completed(returncode=0)), \
+         patch("eda_studio.executors.pnr.subprocess.run", side_effect=fake_pdk_find):
         r = pnr_executor(make_ctx(d))
     assert r["structured"]["success"] is True
 
@@ -86,7 +99,8 @@ def test_drc_no_violations(tmp_path, monkeypatch):
     d = tmp_path / "designs" / "uart" / "pnr"
     d.mkdir(parents=True)
     (d / "uart_pnr.def").write_text("x")
-    with patch("eda_studio.executors.drc.run_shell", return_value=fake_completed(stdout="0 violations", returncode=0)):
+    with patch("eda_studio.executors.drc.run_shell", return_value=fake_completed(stdout="0 violations", returncode=0)), \
+         patch("eda_studio.executors.drc.subprocess.run", side_effect=fake_pdk_find):
         r = drc_executor({"context": {"design_dir": str(d.parent), "docker_config": DOCKER, "shell_config": SHELL}})
     assert r["structured"]["success"] is True
 
@@ -109,7 +123,8 @@ def test_gds_success(tmp_path, monkeypatch):
         (d / "gds").mkdir(exist_ok=True)
         (d / "gds" / "uart.gds").write_text("GDSII")
         return fake_completed(returncode=0)
-    with patch("eda_studio.executors.gds.run_shell", side_effect=fake_run):
+    with patch("eda_studio.executors.gds.run_shell", side_effect=fake_run), \
+         patch("eda_studio.executors.gds.subprocess.run", side_effect=fake_pdk_find):
         r = gds_executor(make_ctx(d))
     assert r["structured"]["success"] is True
     assert r["structured"]["gds_path"].endswith("uart.gds")
@@ -189,7 +204,8 @@ def test_pnr_timeout_returns_failure(tmp_path, monkeypatch):
     (d / "synth").mkdir(parents=True)
     (d / "synth" / "netlist.v").write_text("x")
     with patch("eda_studio.executors.pnr.run_shell",
-               side_effect=subprocess.TimeoutExpired(cmd=["openroad"], timeout=600)):
+               side_effect=subprocess.TimeoutExpired(cmd=["openroad"], timeout=600)), \
+         patch("eda_studio.executors.pnr.subprocess.run", side_effect=fake_pdk_find):
         r = pnr_executor(make_ctx(d))
     assert r["structured"]["success"] is False
     assert r["output"] == "timeout"
@@ -201,7 +217,8 @@ def test_drc_timeout_returns_failure(tmp_path, monkeypatch):
     d.mkdir(parents=True)
     (d / "uart_pnr.def").write_text("x")
     with patch("eda_studio.executors.drc.run_shell",
-               side_effect=subprocess.TimeoutExpired(cmd=["magic"], timeout=600)):
+               side_effect=subprocess.TimeoutExpired(cmd=["magic"], timeout=600)), \
+         patch("eda_studio.executors.drc.subprocess.run", side_effect=fake_pdk_find):
         r = drc_executor({"context": {"design_dir": str(d.parent), "docker_config": DOCKER, "shell_config": SHELL}})
     assert r["structured"]["success"] is False
     assert r["output"] == "timeout"
@@ -213,7 +230,8 @@ def test_gds_timeout_returns_failure(tmp_path, monkeypatch):
     (d / "pnr").mkdir(parents=True)
     (d / "pnr" / "uart_pnr.def").write_text("x")
     with patch("eda_studio.executors.gds.run_shell",
-               side_effect=subprocess.TimeoutExpired(cmd=["klayout"], timeout=600)):
+               side_effect=subprocess.TimeoutExpired(cmd=["klayout"], timeout=600)), \
+         patch("eda_studio.executors.gds.subprocess.run", side_effect=fake_pdk_find):
         r = gds_executor(make_ctx(d))
     assert r["structured"]["success"] is False
     assert r["output"] == "timeout"
