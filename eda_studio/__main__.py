@@ -157,6 +157,54 @@ def _run_with_events(engine, design_name: str) -> None:
         raise error_box[0]
 
 
+def _print_run_summary(design_name: str) -> None:
+    """workflow 结束后打印每个 step 的状态表。
+
+    从 taskstore workflow.json 读 step_history。
+    """
+    import json
+    store_dir = Path(f"designs/{design_name}/.taskstore")
+    task_id_file = store_dir / "task_id"
+    if not task_id_file.exists():
+        print(f"未找到 taskstore: {store_dir}")
+        return
+    task_id = task_id_file.read_text().strip()
+    wf_file = store_dir / task_id / "workflow.json"
+    if not wf_file.exists():
+        print(f"未找到 workflow.json: {wf_file}")
+        return
+    wf = json.loads(wf_file.read_text())
+    status = wf.get("status", "unknown")
+    history = wf.get("step_history", [])
+
+    print(f"\n═══ Workflow 完成 ({status}) ═══")
+    for step in history:
+        sid = step["step_id"]
+        result = step.get("result", {})
+        structured = result.get("structured") or {}
+        success = structured.get("success")
+        output = result.get("output", "")
+        cost = result.get("cost") or {}
+        in_tok = cost.get("total_input_tokens", 0)
+        out_tok = cost.get("total_output_tokens", 0)
+
+        if success is None:
+            # LLM step:有 tool_calls 算成功
+            success = result.get("tool_calls_count", 0) > 0
+
+        mark = "✓" if success else "✗"
+        if in_tok > 0 or out_tok > 0:
+            detail = f"{in_tok//1000}k↓ {out_tok//1000}k↑"
+        else:
+            detail = "executor"
+        line = f"  {sid:<12} {mark}  {detail}"
+        if not success and output:
+            # 错误摘要:取最后一行非空、非 [INFO] 的内容
+            lines = [l for l in output.split("\n") if l.strip() and not l.startswith("[INFO]")]
+            err = lines[-1][:70] if lines else output[:70]
+            line += f"  ← {err}"
+        print(line)
+
 def cmd_run(design_name: str, config_path: str):
     import logging as _logging
     _logging.basicConfig(
@@ -176,6 +224,7 @@ def cmd_run(design_name: str, config_path: str):
         print(f"✓ GDS 产物: {gds}")
     else:
         print(f"✗ 未产出 GDS")
+    _print_run_summary(design_name)
 
 
 def cmd_restore(design_name: str, config_path: str):
@@ -246,6 +295,10 @@ def main(argv=None):
         cmd_run(args.design, args.config)
     elif args.command == "restore":
         cmd_restore(args.design, args.config)
+    elif args.command == "status":
+        cmd_status(args.design)
+    elif args.command == "serve":
+        cmd_serve(args.config, args.port, args.host)
     elif args.command == "init":
         from .cli_commands import cmd_init
         sys.exit(cmd_init(args.design))
