@@ -266,15 +266,19 @@
                 const sid = event.step_id;
                 const cfg = stepConfig[sid] || { name: sid, icon: '🔹' };
                 const output = event.output || '';
+                const structured = event.structured;
+                const success = structured ? structured.success : true;
                 const cost = event.cost;
                 if (cost && cost.total_cost) totalCost += cost.total_cost;
                 updateCostDisplay();
                 let meta = '';
                 if (cost && cost.input_tokens > 0) meta = `${cost.input_tokens}↓ ${cost.output_tokens}↑`;
-                li.innerHTML = `<span class="event-icon">✔</span><div class="event-body"><span class="event-text">${cfg.name} 完成</span>${meta ? `<div class="event-meta">${meta}</div>` : ''}</div><span class="event-ts">${ts}</span>`;
-                li.className = 'event-step_finished';
-                setDoneNode(sid);
-                updateStepCardFinished(sid, output, cost);
+                const icon = success ? '✔' : '✗';
+                const eventClass = success ? 'event-step_finished' : 'event-failed';
+                li.innerHTML = `<span class="event-icon">${icon}</span><div class="event-body"><span class="event-text">${cfg.name} ${success ? '完成' : '失败'}</span>${meta ? `<div class="event-meta">${meta}</div>` : ''}</div><span class="event-ts">${ts}</span>`;
+                li.className = eventClass;
+                if (success) setDoneNode(sid); else setFailedNode(sid);
+                updateStepCardFinished(sid, output, cost, success);
             } else if (type === 'paused') {
                 li.innerHTML = `<span class="event-icon">⏸</span><div class="event-body"><span class="event-text">暂停: ${event.reason || ''}</span></div><span class="event-ts">${ts}</span>`;
                 li.className = 'event-paused';
@@ -292,6 +296,19 @@
                 li.innerHTML = `<span class="event-icon">✗</span><div class="event-body"><span class="event-text">取消: ${escapeHtml(event.reason || '')}</span></div><span class="event-ts">${ts}</span>`;
                 setStatusBadge('failed', 'Cancelled');
                 document.getElementById('submit-btn').disabled = false;
+            } else if (type === 'succeeded' || type === 'failed' || type === 'aborted') {
+                const ok = type === 'succeeded';
+                const banner = document.createElement('div');
+                banner.style.cssText = 'position:fixed;top:60px;left:50%;transform:translateX(-50%);padding:12px 20px;background:' + (ok ? '#1a3a1a' : '#3a1515') + ';border:1px solid ' + (ok ? '#4ecca3' : '#ff4444') + ';border-radius:8px;color:' + (ok ? '#4ecca3' : '#ff6b6b') + ';font-size:14px;z-index:1000;box-shadow:0 4px 12px rgba(0,0,0,0.5);';
+                const doneCount = document.querySelectorAll('.flow-node[data-done="1"]').length;
+                const failedCount = document.querySelectorAll('.flow-node[data-failed="1"]').length;
+                banner.innerHTML = (ok ? '✓' : '✗') + ' Workflow ' + (ok ? '完成' : (type === 'aborted' ? '终止' : '失败')) + ' — ' + doneCount + '/' + (doneCount + failedCount) + ' 步成功';
+                document.body.appendChild(banner);
+                setTimeout(() => banner.remove(), 8000);
+                document.getElementById('submit-btn').disabled = false;
+                if (ok) setStatusBadge('done', 'Done');
+                else setStatusBadge('failed', type === 'aborted' ? 'Aborted' : 'Failed');
+                return;
             } else {
                 li.innerHTML = `<span class="event-icon">•</span><div class="event-body"><span class="event-text">${escapeHtml(JSON.stringify(event))}</span></div><span class="event-ts">${ts}</span>`;
             }
@@ -346,15 +363,12 @@
             if (sid === viewStepId) renderStepView(sid);
         }
 
-        function updateStepCardFinished(sid, output, cost) {
+        function updateStepCardFinished(sid, output, cost, success) {
             const s = _ensureStore(sid);
             s.output = output || '';
             s.cost = cost;
             s.finished = true;
-            // LLM step:无 structured.success;EXEC step:从 structured 判断
-            // (event 里 structured 在 output 同级,但目前 step_finished event 只传 output/cost,
-            //  success 从 output 非空推断对 EXEC step 够用)
-            s.success = true;
+            s.success = (success !== false);
             if (sid === viewStepId) renderStepView(sid);
         }
 
@@ -376,9 +390,13 @@
             if (reportSteps.includes(sid) && s.finished) {
                 extra += `<a class="report-link" href="/api/report/${sid}" target="_blank">查看完整报告 →</a>`;
             }
-            // render step:PNG
+            // render step:成功显示 PNG,失败显示错误
             if (sid === 'render' && s.finished) {
-                extra += `<img src="/api/render.png?t=${Date.now()}" alt="GDS 渲染预览" style="width:100%;margin-top:12px;border:1px solid #0f3460;border-radius:6px;background:#fff;">`;
+                if (s.success) {
+                    extra += `<img src="/api/render.png?t=${Date.now()}" alt="GDS 渲染预览" style="width:100%;margin-top:12px;border:1px solid #0f3460;border-radius:6px;background:#fff;">`;
+                } else {
+                    extra += `<div style="margin-top:12px;padding:10px;background:#3a1515;border:1px solid #ff4444;border-radius:6px;color:#ff6b6b;font-size:12px;">渲染失败 — 见上方输出</div>`;
+                }
             }
             // cost
             let meta = '';
