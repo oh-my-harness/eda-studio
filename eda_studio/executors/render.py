@@ -22,15 +22,12 @@ def render_executor(ctx: dict) -> dict:
                 "structured": {"success": False}}
 
     gds_path = to_container_path(gds_file, docker_cfg)
-    png_path = to_container_path(png_out, docker_cfg)
-    # ruby 脚本:读 GDS,创建 view,save_image 导 PNG
     rb = f"""\
 ly = RBA::Layout.new
 ly.read("{gds_path}")
 view = RBA::LayoutView.new
 view.set_config("background-color", "#FFFFFF")
 view.show_layout(ly, false)
-view.set_active_layer(ly.layer(0, 0))
 view.zoom_fit
 view.save_image("{png_path}", 1600, 1200)
 """
