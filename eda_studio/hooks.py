@@ -1,11 +1,12 @@
 """日志/审计 hooks + 空响应纠正。
 
 should_stop + transform_context 组合:
-- should_stop: 检测模型 EndTurn 没调工具 → 返回 False(继续 turn) + 标记
+- should_stop: turn 0 EndTurn 且无 tool_use(模型从未调过工具) → 返回 False
+  (继续 turn) + 标记。turn > 0 的 EndTurn 是正常完成,不触发。
 - transform_context: 检测标记 → 往 messages 追加 nudge(响应式反馈)
 
 这是响应式纠错:模型出错时反馈,不在 prompt 里主动注入。
-有 max_retries 计数器防止无限循环。
+每个 step 最多 nudge 一次;judge retry 重跑 step 时 turn 0 重新计数。
 """
 import datetime
 import logging
@@ -63,33 +64,30 @@ def _has_tool_use(content) -> bool:
     return any(b.get("type") == "tool_use" for b in content)
 
 
-def make_empty_response_nudge_hooks(max_retries: int = 3):
-    """创建 should_stop + transform_context hook 对,共享重试计数器。
+def make_empty_response_nudge_hooks():
+    """创建 should_stop + transform_context hook 对,共享 nudge 标记。
 
-    should_stop: 模型 EndTurn 且 last_assistant 无 tool_use → 返回 False
-    (继续 turn),标记需要 nudge。有 max_retries 防止无限循环。
+    should_stop: turn 0 EndTurn 且无 tool_use → 返回 False(继续 turn),
+    标记 need_nudge。turn > 0 的 EndTurn 或已调工具 → 正常停止。
+    每个 step 最多 nudge 一次;judge retry 重跑 step 时 turn_index 重置。
     transform_context: 检测标记 → 往 messages 追加 nudge user 消息。
     """
-    state = {"empty_count": 0, "need_nudge": False}
+    state = {"need_nudge": False}
 
     def should_stop_cb(ctx: dict) -> bool:
         stop_reason = ctx.get("stop_reason", "")
+        turn_index = ctx.get("turn_index", 0)
         last_assistant = ctx.get("last_assistant") or {}
         content = last_assistant.get("content", [])
 
+        # turn > 0 的 EndTurn 是正常完成(前面 turn 已调过工具)
         # 非 EndTurn(如 MaxTokens)或已调工具 → 正常停止
-        if stop_reason != "end_turn" or _has_tool_use(content):
+        if turn_index > 0 or stop_reason != "end_turn" or _has_tool_use(content):
             state["need_nudge"] = False
             return True
 
-        # EndTurn 且无 tool_use → 空响应
-        state["empty_count"] += 1
-        if state["empty_count"] > max_retries:
-            logger.warning(f"空响应重试 {state['empty_count']} 次,超限放弃")
-            state["need_nudge"] = False
-            return True  # 停止,让 judge 决策(tool_calls_count=0 → retry/abort)
-
-        logger.info(f"空响应(无 tool_use),注入 nudge 重试 {state['empty_count']}/{max_retries}")
+        # turn 0 EndTurn 且无 tool_use → 模型从未调过工具就结束
+        logger.info("turn 0 空响应(无 tool_use),注入 nudge")
         state["need_nudge"] = True
         return False  # 继续下一个 turn
 

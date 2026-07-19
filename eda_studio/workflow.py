@@ -181,11 +181,10 @@ def build_workflow(config: AppConfig, design_name: str) -> WorkflowEngine:
         .with_max_retries(config.workflow_config.max_fix_retries)  # judge 返回 "retry" 时的重试上限
     )
 
-    # 空响应纠正:模型 EndTurn 没调工具 → should_stop 返回 False(继续 turn)
-    # + transform_context 注入 nudge(响应式反馈)。有 max_retries 兜底。
-    should_stop_cb, nudge_transform_cb = make_empty_response_nudge_hooks(
-        max_retries=config.workflow_config.max_fix_retries
-    )
+    # 空响应纠正:turn 0 EndTurn 无 tool_use(模型从未调过工具) → should_stop
+    # 返回 False(继续 turn) + transform_context 注入 nudge(响应式反馈)。
+    # 每个 step 最多 nudge 一次;judge retry 重跑 step 时 turn 0 重新计数。
+    should_stop_cb, nudge_transform_cb = make_empty_response_nudge_hooks()
     # provider 响应日志:记录 HTTP 状态码/延迟/token 用量(诊断用)
     engine = engine.with_hooks([
         create_should_stop_hook(should_stop_cb),

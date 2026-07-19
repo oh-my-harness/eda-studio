@@ -65,9 +65,7 @@ def _re_register(engine, config, design_name):
         .with_hooks(_wrap_hooks(make_hooks(config)))
     )
     # 空响应纠正 + provider 日志(同 build_workflow)
-    should_stop_cb, nudge_transform_cb = make_empty_response_nudge_hooks(
-        max_retries=config.workflow_config.max_fix_retries
-    )
+    should_stop_cb, nudge_transform_cb = make_empty_response_nudge_hooks()
     engine = engine.with_hooks([
         create_should_stop_hook(should_stop_cb),
         create_transform_context_hook(nudge_transform_cb),
