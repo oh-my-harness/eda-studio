@@ -986,6 +986,8 @@ senza 的 `run_shell()` 函数封装了 docker exec 前缀（见 §4.5 executor 
 
 ## 11. 不做的事
 
+- 不修改 Senza 源码（本项目是纯消费者）
+- **不去查看 runtime Rust 库的实现**（`llm-harness-runtime` 等）。只通过 `senza` Python 包的公开 API 和 `.pyi` type stubs 了解可用能力。如果遇到 runtime 功能不足以支撑开发，给 Senza 仓库提 issue：https://github.com/oh-my-harness/Senza/issues
 - 不做 EDA 工具安装脚本
 - 不做 Web UI
 - 不做工业级 PPA 优化
