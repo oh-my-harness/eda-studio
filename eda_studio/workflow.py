@@ -17,6 +17,7 @@ from senza import (
     create_pricing_provider,
     create_before_turn_hook, create_after_turn_hook, create_after_tool_call_hook,
     create_after_provider_response_hook,
+    create_before_run_hook,
     create_should_stop_hook, create_transform_context_hook,
     create_shell_executor,
 )
@@ -216,15 +217,16 @@ def build_workflow(config: AppConfig, design_name: str) -> WorkflowEngine:
         .with_max_retries(config.workflow_config.max_fix_retries)  # judge 返回 "retry" 时的重试上限
     )
 
-    # 空响应纠正:turn 0 EndTurn 无 tool_use(模型从未调过工具) → should_stop
-    # 返回 False(继续 turn) + transform_context 注入 nudge(响应式反馈)。
-    # 每个 step 最多 nudge 一次;judge retry 重跑 step 时 turn 0 重新计数。
-    should_stop_cb, nudge_transform_cb = make_empty_response_nudge_hooks()
+    # 空响应纠正:EndTurn 无 tool_use → should_stop 返回 False(继续 turn)
+    # + transform_context 注入 nudge(响应式反馈)。
+    # nudge 计数在每次 step run 开始时重置(before_run hook)。
+    should_stop_cb, nudge_transform_cb, reset_nudge = make_empty_response_nudge_hooks()
     # provider 响应日志:记录 HTTP 状态码/延迟/token 用量(诊断用)
     engine = engine.with_hooks([
         create_should_stop_hook(should_stop_cb),
         create_transform_context_hook(nudge_transform_cb),
         create_after_provider_response_hook(make_provider_response_logger()),
+        create_before_run_hook(lambda ctx: reset_nudge()),
     ])
 
     # system_prompt plugin:每个 LLM step 都要有 system prompt,

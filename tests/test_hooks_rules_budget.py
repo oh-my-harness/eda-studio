@@ -38,19 +38,19 @@ def test_make_hooks_returns_three_closures():
 
 
 def test_nudge_turn0_empty_response_returns_false():
-    should_stop, _ = make_empty_response_nudge_hooks()
+    should_stop, _, _ = make_empty_response_nudge_hooks()
     ctx = {"turn_index": 0, "stop_reason": "end_turn", "last_assistant": {"content": []}}
     assert should_stop(ctx) is False  # 继续 turn
 
 def test_nudge_turn0_has_tool_use_returns_true():
-    should_stop, _ = make_empty_response_nudge_hooks()
+    should_stop, _, _ = make_empty_response_nudge_hooks()
     ctx = {"turn_index": 0, "stop_reason": "end_turn",
            "last_assistant": {"content": [{"type": "tool_use", "id": "1", "name": "x"}]}}
     assert should_stop(ctx) is True
 
 def test_nudge_turn_gt0_empty_nudges_again():
     # turn > 0 空响应(无 tool_use) → 继续 nudge(最多 max_nudge 次)
-    should_stop, _ = make_empty_response_nudge_hooks(max_nudge=3)
+    should_stop, _, _ = make_empty_response_nudge_hooks(max_nudge=3)
     ctx = {"turn_index": 1, "stop_reason": "end_turn", "last_assistant": {"content": []}}
     # 前 3 次返回 False(nudge)
     assert should_stop(ctx) is False
@@ -61,7 +61,7 @@ def test_nudge_turn_gt0_empty_nudges_again():
 
 def test_nudge_max_tokens_auto_continue():
     """MaxTokens 截断时应返回 False(继续),让模型续输。"""
-    should_stop, _ = make_empty_response_nudge_hooks(max_auto_continue=3)
+    should_stop, _, _ = make_empty_response_nudge_hooks(max_auto_continue=3)
     ctx = {"turn_index": 0, "stop_reason": "max_tokens", "last_assistant": {"content": []}}
     # 前 3 次返回 False(auto-continue)
     assert should_stop(ctx) is False
@@ -71,7 +71,7 @@ def test_nudge_max_tokens_auto_continue():
     assert should_stop(ctx) is True
 
 def test_nudge_transform_injects_message():
-    should_stop, transform = make_empty_response_nudge_hooks()
+    should_stop, transform, _ = make_empty_response_nudge_hooks()
     should_stop({"turn_index": 0, "stop_reason": "end_turn", "last_assistant": {"content": []}})
     result = transform({"messages": [{"role": "user", "content": []}], "system_prompt": "x"})
     assert len(result["messages"]) == 2
@@ -79,6 +79,18 @@ def test_nudge_transform_injects_message():
     assert "tool_use" in result["messages"][1]["content"][0]["text"]
 
 def test_nudge_transform_noop_without_should_stop():
-    _, transform = make_empty_response_nudge_hooks()
+    _, transform, _ = make_empty_response_nudge_hooks()
     result = transform({"messages": [{"role": "user", "content": []}], "system_prompt": "x"})
     assert len(result["messages"]) == 1
+
+def test_nudge_reset_clears_count():
+    """reset() 后 nudge 计数归零,可以重新 nudge。"""
+    should_stop, _, reset = make_empty_response_nudge_hooks(max_nudge=2)
+    ctx = {"turn_index": 0, "stop_reason": "end_turn", "last_assistant": {"content": []}}
+    # 用完 2 次 nudge
+    assert should_stop(ctx) is False
+    assert should_stop(ctx) is False
+    assert should_stop(ctx) is True  # 耗尽
+    # reset 后重新计数
+    reset()
+    assert should_stop(ctx) is False

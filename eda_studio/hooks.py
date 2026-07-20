@@ -95,10 +95,18 @@ def make_empty_response_nudge_hooks(max_auto_continue: int = 3, max_nudge: int =
     3. 已调工具 → 正常停止。
 
     transform_context: 检测 need_nudge 标记 → 往 messages 追加 nudge user 消息。
+
+    reset() 在每次 step run 开始时调用(before_run hook),重置 nudge 计数。
     """
     state = {"need_nudge": False}
     auto_continue_count = 0
     nudge_count = 0
+
+    def reset():
+        """新 step run 开始时重置 nudge 计数。"""
+        nonlocal nudge_count
+        nudge_count = 0
+        state["need_nudge"] = False
 
     def should_stop_cb(ctx: dict) -> bool:
         nonlocal auto_continue_count, nudge_count
@@ -156,4 +164,4 @@ def make_empty_response_nudge_hooks(max_auto_continue: int = 3, max_nudge: int =
             "messages": new_messages,
         }
 
-    return should_stop_cb, transform_cb
+    return should_stop_cb, transform_cb, reset

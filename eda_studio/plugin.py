@@ -2,6 +2,10 @@
 
 告诉模型它的角色和必须调用工具,避免模型只 thinking 不调工具。
 """
+import logging
+
+logger = logging.getLogger(__name__)
+
 from senza import create_before_run_hook, create_plugin
 
 
@@ -35,6 +39,7 @@ DRC_FIX_SYSTEM = (
 def create_system_prompt_plugin(prompt: str):
     """创建 system-prompt plugin,在每次 run 前设置 system prompt。"""
     def before_run_cb(ctx: dict):
+        logger.info(f"system_prompt plugin: before_run called, setting prompt ({len(prompt)} chars)")
         return {
             "system_prompt": prompt,
             "additional_messages": [],
