@@ -26,6 +26,23 @@ def make_file_tools(design_dir: Path):
         lines = len(path.read_text().splitlines())
         return {"content": [{"type": "text", "text": f"已追加到 {path} (当前 {lines} 行)"}], "terminate": False}
 
+    def edit_rtl_fn(args: dict, ctx) -> dict:
+        """精准替换文件中的代码片段。用于修复 bug 时只改出问题的部分,不重写整个文件。"""
+        filename = args["filename"]
+        old_code = args["old_code"]
+        new_code = args["new_code"]
+        path = design_dir / "rtl" / filename
+        if not path.exists():
+            return {"content": [{"type": "text", "text": f"文件不存在: {filename}"}], "terminate": False}
+        text = path.read_text()
+        count = text.count(old_code)
+        if count == 0:
+            return {"content": [{"type": "text", "text": f"未找到要替换的代码片段。请用 read_rtl 确认文件内容后重试。"}], "terminate": False}
+        if count > 1:
+            return {"content": [{"type": "text", "text": f"找到 {count} 处匹配,请提供更长的上下文使匹配唯一。"}], "terminate": False}
+        path.write_text(text.replace(old_code, new_code, 1))
+        return {"content": [{"type": "text", "text": f"已替换 {path}"}], "terminate": False}
+
     def read_rtl_fn(args: dict, ctx) -> dict:
         filename = args["filename"]
         path = design_dir / "rtl" / filename
@@ -57,6 +74,7 @@ def make_file_tools(design_dir: Path):
 
     return {
         "write_rtl": write_rtl_fn, "append_rtl": append_rtl_fn,
+        "edit_rtl": edit_rtl_fn,
         "read_rtl": read_rtl_fn, "list_design_files": list_design_files_fn,
         "read_sdc": read_sdc_fn, "write_sdc": write_sdc_fn,
     }

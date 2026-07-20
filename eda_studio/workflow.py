@@ -61,7 +61,7 @@ def _wrap_hooks(raw_hooks):
 
 
 def _build_tools(design_dir: Path) -> list:
-    """构建 7 个 EDA tool(write/read/list + report + sdc)的 Tool 对象。
+    """构建 9 个 EDA tool(write/append/edit/read/list + report + sdc)的 Tool 对象。
 
     用于 build_workflow 初始构建与 _re_register restore 后重注册:
     WorkflowEngine.restore 清空 extra_tools,需重新 with_tool 注册。
@@ -85,6 +85,15 @@ def _build_tools(design_dir: Path) -> list:
         },
         "required": ["filename", "content"],
     })
+    edit_rtl_schema = json.dumps({
+        "type": "object",
+        "properties": {
+            "filename": {"type": "string", "description": "文件名,如 uart_tx.v"},
+            "old_code": {"type": "string", "description": "要替换的原始代码片段(必须与文件内容完全一致)"},
+            "new_code": {"type": "string", "description": "替换后的代码片段"},
+        },
+        "required": ["filename", "old_code", "new_code"],
+    })
     read_rtl_schema = json.dumps({
         "type": "object",
         "properties": {"filename": {"type": "string"}},
@@ -100,6 +109,7 @@ def _build_tools(design_dir: Path) -> list:
     return [
         create_tool("write_rtl", "写 Verilog 文件(全量覆盖)", write_rtl_schema, file_tools["write_rtl"]),
         create_tool("append_rtl", "追加内容到 Verilog 文件末尾(分多次写大模块)", append_rtl_schema, file_tools["append_rtl"]),
+        create_tool("edit_rtl", "精准替换 Verilog 文件中的代码片段(修复 bug 时只改出问题的部分)", edit_rtl_schema, file_tools["edit_rtl"]),
         create_tool("read_rtl", "读 Verilog 文件", read_rtl_schema, file_tools["read_rtl"]),
         create_tool("list_design_files", "列出工作区文件", no_arg_schema, file_tools["list_design_files"]),
         create_tool("read_sim_report", "读仿真报告", no_arg_schema, report_tools["read_sim_report"]),
@@ -127,18 +137,18 @@ def build_workflow(config: AppConfig, design_name: str) -> WorkflowEngine:
         rtl_steps.append({
             "id": sid, "name": m.name,
             "prompt": prompts[sid],
-            "allowed_tools": ["write_rtl", "append_rtl", "read_rtl", "list_design_files"],
+            "allowed_tools": ["write_rtl", "append_rtl", "edit_rtl", "read_rtl", "list_design_files"],
         })
     fixed_steps = [
         {"id": "simulate", "name": "仿真验证", "executor": "simulate"},
         {"id": "debug_fix", "name": "仿真修复",
          "prompt": prompts["debug_fix"],
-         "allowed_tools": ["read_sim_report", "read_rtl", "write_rtl"]},
+         "allowed_tools": ["read_sim_report", "read_rtl", "write_rtl", "append_rtl", "edit_rtl"]},
         {"id": "synthesize", "name": "逻辑综合", "executor": "synthesize"},
         {"id": "pnr", "name": "布局布线", "executor": "pnr"},
         {"id": "drc_fix", "name": "DRC 修复",
          "prompt": prompts["drc_fix"],
-         "allowed_tools": ["read_drc_report", "read_sdc", "write_sdc", "read_rtl", "write_rtl"]},
+         "allowed_tools": ["read_drc_report", "read_sdc", "write_sdc", "read_rtl", "write_rtl", "edit_rtl"]},
         {"id": "drc", "name": "DRC 检查", "executor": "drc"},
         {"id": "gds", "name": "GDS 导出", "executor": "gds"},
         {"id": "render", "name": "渲染预览", "executor": "render"},
@@ -190,7 +200,7 @@ def build_workflow(config: AppConfig, design_name: str) -> WorkflowEngine:
         .with_executor("gds", create_executor(gds_executor))
         .with_executor("render", create_executor(render_executor))
         .with_executor("shell", create_shell_executor(["echo", "python3"]))
-        # 8 个 tool(write/append/read/list + report + sdc)
+        # 9 个 tool(write/append/edit/read/list + report + sdc)
         .with_tool(tool_specs[0])
         .with_tool(tool_specs[1])
         .with_tool(tool_specs[2])
@@ -199,6 +209,7 @@ def build_workflow(config: AppConfig, design_name: str) -> WorkflowEngine:
         .with_tool(tool_specs[5])
         .with_tool(tool_specs[6])
         .with_tool(tool_specs[7])
+        .with_tool(tool_specs[8])
         .with_hooks(_wrap_hooks(make_hooks(config)))
         .with_task_store(f"designs/{design_name}/.taskstore")
         .with_max_tokens(8192)  # 与 omp 一致;32768 会让 glm-5.2 thinking 过长导致连接超时

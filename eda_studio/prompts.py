@@ -33,16 +33,14 @@ DEBUG_FIX_PROMPT = """仿真失败了。请分析报告并修复 RTL。
 1. 用 read_sim_report 读取仿真报告(含错误行和失败断言)
 2. 用 read_rtl 读取当前 RTL 代码
 3. 分析失败原因(语法错误、时序违例、功能错误等)
-4. 用 write_rtl 写入修复后的代码(保持 filename 不变)
-"""
+4. 用 edit_rtl 精准替换出问题的代码片段(old_code=原代码,new_code=修复后代码);改动大时用 write_rtl 全量重写"""
 
 DRC_FIX_PROMPT = """DRC 检查失败了。请分析报告并修复。
 
 1. 用 read_drc_report 读取 DRC 报告
 2. 用 read_sdc 读取时序约束
 3. 用 read_rtl 读取相关 RTL
-4. 用 write_sdc 或 write_rtl 写入修复
-"""
+4. 用 write_sdc/edit_rtl/write_rtl 写入修复(SDC 问题用 write_sdc,RTL 小改用 edit_rtl,大改用 write_rtl)"""
 
 
 def load_requirement(design_name: str) -> str:
