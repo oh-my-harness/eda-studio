@@ -34,7 +34,7 @@ def test_make_hooks_returns_three_closures():
     assert len(hooks) == 3
     assert hooks[0]({"turn_index": 0}) is None
     assert hooks[1]({"turn_index": 0}) is None
-    assert hooks[2]({"tool_name": "write_rtl"}) == "passthrough"
+    assert hooks[2]({"tool_name": "write"}) == "passthrough"
 
 
 def test_nudge_turn0_empty_response_returns_false():

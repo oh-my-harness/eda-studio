@@ -19,28 +19,27 @@ RTL_MODULE_PROMPT = """你是一个数字电路设计专家。请根据以下需
 - 同步复位(rst_n 低有效)
 
 要求:
-1. 用 read_rtl 读取已写的模块了解接口风格(第一个模块跳过)
-2. 用 write_rtl 工具(filename 参数传 "{file}")写入模块代码
-3. 如果模块较大,用 append_rtl 分多次追加(先写端口和骨架,再追加状态机/逻辑)
-4. 用 list_design_files 确认文件已写入
+1. 用 read 工具读取 rtl/ 下已写的模块了解接口风格(第一个模块跳过);read 目录可列文件
+2. 用 write 工具(path 参数传 "rtl/{file}")写入模块代码
+3. 如果模块较大,先 write 写端口和骨架,再用 edit 逐步追加状态机/逻辑(每次 <100 行)
+4. 用 read 目录 rtl/ 确认文件已写入
 5. 不要写 testbench,不要写其他模块
 
-重要:每次 write_rtl/append_rtl 的 content 不要太长(建议 <100 行)。
-如果一次写不完,先 write_rtl 写骨架,再用 append_rtl 逐步追加。"""
+重要:每次 write 的 content 不要太长(建议 <100 行)。"""
 
 DEBUG_FIX_PROMPT = """仿真失败了。请分析报告并修复 RTL。
 
-1. 用 read_sim_report 读取仿真报告(含错误行和失败断言)
-2. 用 read_rtl 读取当前 RTL 代码
+1. 用 read 工具读取 sim/report.txt(仿真报告)
+2. 用 read 工具读取 rtl/ 下的相关 RTL 代码
 3. 分析失败原因(语法错误、时序违例、功能错误等)
-4. 用 edit_rtl 精准替换出问题的代码片段(old_code=原代码,new_code=修复后代码);改动大时用 write_rtl 全量重写"""
+4. 用 edit 精准替换出问题的代码行(先 read 拿行号和 tag,再 edit swap);改动大时用 write 全量重写"""
 
 DRC_FIX_PROMPT = """DRC 检查失败了。请分析报告并修复。
 
-1. 用 read_drc_report 读取 DRC 报告
-2. 用 read_sdc 读取时序约束
-3. 用 read_rtl 读取相关 RTL
-4. 用 write_sdc/edit_rtl/write_rtl 写入修复(SDC 问题用 write_sdc,RTL 小改用 edit_rtl,大改用 write_rtl)"""
+1. 用 read 工具读取 pnr/drc.rpt(DRC 报告)
+2. 用 read 工具读取 pnr/uart.sdc(时序约束)
+3. 用 read 工具读取 rtl/ 下的相关 RTL
+4. 用 write/edit 写入修复(SDC 问题用 write 写 pnr/uart.sdc,RTL 小改用 edit,大改用 write)"""
 
 
 def load_requirement(design_name: str) -> str:

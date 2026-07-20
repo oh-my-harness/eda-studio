@@ -9,12 +9,11 @@ senza API 偏差(以实际 pyi/runtime 为准):
    因此删除 brief 中的 `{"from":"gds","to":"done"}` 边(gds 之后由
    judge 返回 "done" 终止)。
 """
-import json
 from pathlib import Path
 from senza import (
-    WorkflowEngine, create_os_env, create_executor, create_tool,
+    WorkflowEngine, create_os_env, create_executor,
     create_judge, create_openai_provider, create_anthropic_provider,
-    create_pricing_provider,
+    create_pricing_provider, create_fs_tools_plugin,
     create_before_turn_hook, create_after_turn_hook, create_after_tool_call_hook,
     create_after_provider_response_hook,
     create_before_run_hook,
@@ -28,8 +27,6 @@ from .hooks import make_hooks, make_provider_response_logger, make_empty_respons
 from .plugin import (
     create_system_prompt_plugin, RTL_SYSTEM, DEBUG_FIX_SYSTEM, DRC_FIX_SYSTEM,
 )
-from .tools.file_tools import make_file_tools
-from .tools.report_tools import make_report_tools
 from .executors import (
     simulate_executor, synthesize_executor, pnr_executor,
     drc_executor, gds_executor, render_executor,
@@ -62,75 +59,20 @@ def _wrap_hooks(raw_hooks):
     ]
 
 
-def _build_tools(design_dir: Path) -> list:
-    """构建 9 个 EDA tool(write/append/edit/read/list + report + sdc)的 Tool 对象。
-
-    用于 build_workflow 初始构建与 _re_register restore 后重注册:
-    WorkflowEngine.restore 清空 extra_tools,需重新 with_tool 注册。
-    """
-    file_tools = make_file_tools(design_dir)
-    report_tools = make_report_tools(design_dir)
-
-    write_rtl_schema = json.dumps({
-        "type": "object",
-        "properties": {
-            "filename": {"type": "string", "description": "文件名,如 uart_tx.v"},
-            "content": {"type": "string", "description": "Verilog 代码内容"},
-        },
-        "required": ["filename", "content"],
-    })
-    append_rtl_schema = json.dumps({
-        "type": "object",
-        "properties": {
-            "filename": {"type": "string", "description": "文件名,如 uart_tx.v"},
-            "content": {"type": "string", "description": "要追加的 Verilog 代码内容"},
-        },
-        "required": ["filename", "content"],
-    })
-    edit_rtl_schema = json.dumps({
-        "type": "object",
-        "properties": {
-            "filename": {"type": "string", "description": "文件名,如 uart_tx.v"},
-            "old_code": {"type": "string", "description": "要替换的原始代码片段(必须与文件内容完全一致)"},
-            "new_code": {"type": "string", "description": "替换后的代码片段"},
-        },
-        "required": ["filename", "old_code", "new_code"],
-    })
-    read_rtl_schema = json.dumps({
-        "type": "object",
-        "properties": {"filename": {"type": "string"}},
-        "required": ["filename"],
-    })
-    no_arg_schema = json.dumps({"type": "object", "properties": {}})
-    write_sdc_schema = json.dumps({
-        "type": "object",
-        "properties": {"content": {"type": "string"}},
-        "required": ["content"],
-    })
-
-    return [
-        create_tool("write_rtl", "写 Verilog 文件(全量覆盖)", write_rtl_schema, file_tools["write_rtl"]),
-        create_tool("append_rtl", "追加内容到 Verilog 文件末尾(分多次写大模块)", append_rtl_schema, file_tools["append_rtl"]),
-        create_tool("edit_rtl", "精准替换 Verilog 文件中的代码片段(修复 bug 时只改出问题的部分)", edit_rtl_schema, file_tools["edit_rtl"]),
-        create_tool("read_rtl", "读 Verilog 文件", read_rtl_schema, file_tools["read_rtl"]),
-        create_tool("list_design_files", "列出工作区文件", no_arg_schema, file_tools["list_design_files"]),
-        create_tool("read_sim_report", "读仿真报告", no_arg_schema, report_tools["read_sim_report"]),
-        create_tool("read_drc_report", "读 DRC 报告", no_arg_schema, report_tools["read_drc_report"]),
-        create_tool("read_sdc", "读时序约束", no_arg_schema, file_tools["read_sdc"]),
-        create_tool("write_sdc", "写时序约束", write_sdc_schema, file_tools["write_sdc"]),
-    ]
 
 
 def build_workflow(config: AppConfig, design_name: str) -> WorkflowEngine:
     """构建 WorkflowEngine:根据 design_config 动态生成 steps + edges。"""
-    design_dir = Path(f"designs/{design_name}")
+    design_dir = Path(f"designs/{design_name}").resolve()
     requirement = load_requirement(design_name)
     from .design_config import load_design_config
     dcfg = load_design_config(design_dir)
     prompts = build_prompts(requirement, dcfg.modules)
     provider, pricing = build_providers(config)
 
-    tool_specs = _build_tools(design_dir)
+    # 内置 FsToolsPlugin 提供 read/write/edit/bash 四件套,替代本地文件工具。
+    # read↔edit 通过 FileSnapshotStore 耦合,hashline tag 防止 stale edit。
+    fs_plugin = create_fs_tools_plugin()
 
     # 动态生成 rtl steps(每个模块一个)+ 固定 executor/fix steps
     rtl_steps = []
@@ -139,18 +81,18 @@ def build_workflow(config: AppConfig, design_name: str) -> WorkflowEngine:
         rtl_steps.append({
             "id": sid, "name": m.name,
             "prompt": prompts[sid],
-            "allowed_tools": ["write_rtl", "append_rtl", "edit_rtl", "read_rtl", "list_design_files"],
+            "allowed_tools": ["write", "read", "edit"],
         })
     fixed_steps = [
         {"id": "simulate", "name": "仿真验证", "executor": "simulate"},
         {"id": "debug_fix", "name": "仿真修复",
          "prompt": prompts["debug_fix"],
-         "allowed_tools": ["read_sim_report", "read_rtl", "write_rtl", "append_rtl", "edit_rtl"]},
+         "allowed_tools": ["read", "write", "edit"]},  # sim/report.txt + rtl/*.v
         {"id": "synthesize", "name": "逻辑综合", "executor": "synthesize"},
         {"id": "pnr", "name": "布局布线", "executor": "pnr"},
         {"id": "drc_fix", "name": "DRC 修复",
          "prompt": prompts["drc_fix"],
-         "allowed_tools": ["read_drc_report", "read_sdc", "write_sdc", "read_rtl", "write_rtl", "edit_rtl"]},
+         "allowed_tools": ["read", "write", "edit"]},  # pnr/drc.rpt + pnr/*.sdc + rtl/*.v
         {"id": "drc", "name": "DRC 检查", "executor": "drc"},
         {"id": "gds", "name": "GDS 导出", "executor": "gds"},
         {"id": "render", "name": "渲染预览", "executor": "render"},
@@ -187,7 +129,7 @@ def build_workflow(config: AppConfig, design_name: str) -> WorkflowEngine:
     }
 
     judge = create_judge(make_judge_fn(config, rtl_ids=rtl_ids))
-    env = create_os_env(working_dir=".")
+    env = create_os_env(working_dir=str(design_dir))
     engine = WorkflowEngine(
         workflow_dict, provider, config.model, judge, env=env,
     )
@@ -202,22 +144,18 @@ def build_workflow(config: AppConfig, design_name: str) -> WorkflowEngine:
         .with_executor("gds", create_executor(gds_executor))
         .with_executor("render", create_executor(render_executor))
         .with_executor("shell", create_shell_executor(["echo", "python3"]))
-        # 9 个 tool(write/append/edit/read/list + report + sdc)
-        .with_tool(tool_specs[0])
-        .with_tool(tool_specs[1])
-        .with_tool(tool_specs[2])
-        .with_tool(tool_specs[3])
-        .with_tool(tool_specs[4])
-        .with_tool(tool_specs[5])
-        .with_tool(tool_specs[6])
-        .with_tool(tool_specs[7])
-        .with_tool(tool_specs[8])
+        # 内置 fs tools(read/write/edit/bash)注册到每个 LLM step
+        # rtl_*/debug_fix/drc_fix 共享同一个 FsToolsPlugin 实例
+        .with_step_plugin(rtl_ids[0], fs_plugin)
         .with_hooks(_wrap_hooks(make_hooks(config)))
         .with_task_store(f"designs/{design_name}/.taskstore")
         .with_max_tokens(16384)  # glm-5.2 thinking 动辄 8000+ tokens,8192 全被吃完;adapter timeout 已修复连接超时
         .with_thinking_level("high")  # 与 omp 一致:reasoning_effort=high
         .with_max_retries(config.workflow_config.max_fix_retries)  # judge 返回 "retry" 时的重试上限
     )
+    # FsToolsPlugin 注册到其余 LLM step(rtl_ids[0] 已注册)
+    for sid in rtl_ids[1:] + ["debug_fix", "drc_fix"]:
+        engine = engine.with_step_plugin(sid, fs_plugin)
 
     # 空响应纠正:EndTurn 无 tool_use → should_stop 返回 False(继续 turn)
     # + transform_context 注入 nudge(响应式反馈)。

@@ -30,7 +30,7 @@ def make_judge_fn(config: AppConfig, rtl_ids: list = None):
             f"judge: step={step_id} success={success} tool_calls={tool_calls_count} "
             f"retry={retry_count} structured={structured}"
         )
-        # RTL 步骤:模型必须调了工具(write_rtl)才算完成。
+        # RTL 步骤:模型必须调了工具(write/edit)才算完成。
         # 不用 output 判断 —— runtime FinalAnswer 空文本会覆盖 text_delta。
         # 没调工具就 EndTurn → retry 让模型重试,耗尽则 abort。
         rtl_done = tool_calls_count > 0

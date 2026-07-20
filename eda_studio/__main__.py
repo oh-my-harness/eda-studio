@@ -24,11 +24,11 @@ from dataclasses import asdict
 from pathlib import Path
 from senza import (
     WorkflowEngine, create_os_env, create_executor, create_judge,
+    create_fs_tools_plugin,
     create_should_stop_hook, create_transform_context_hook,
     create_after_provider_response_hook, create_shell_executor,
 )
-from .config import load_config
-from .workflow import build_workflow, build_providers, _wrap_hooks, _build_tools
+from .workflow import build_workflow, build_providers, _wrap_hooks
 from .judge import make_judge_fn
 from .hooks import make_hooks, make_provider_response_logger, make_empty_response_nudge_hooks
 from .executors import (
@@ -37,16 +37,15 @@ from .executors import (
 )
 
 
-def _re_register(engine, config, design_name):
-    """restore 后重新注册 executors/hooks/tools/context 变量。
+def _re_register(engine, config, design_name, rtl_ids):
+    """restore 后重新注册 executors/hooks/plugin/context 变量。
 
     WorkflowEngine.restore 只恢复 workflow 定义与 taskstore 状态,
-    不恢复 with_executor/with_tool/with_hooks/set_context_variable 的注册,
-    且 restore 会清空 extra_tools(engine.rs:491/561 extra_tools: vec![]),
-    需在此重新挂载——否则 LLM step 的 allowed_tools 找不到 tool 实现。
+    不恢复 with_executor/with_step_plugin/with_hooks/set_context_variable
+    的注册,需在此重新挂载——否则 LLM step 的 allowed_tools 找不到 tool 实现。
     """
-    design_dir = Path(f"designs/{design_name}")
-    tools = _build_tools(design_dir)
+    design_dir = Path(f"designs/{design_name}").resolve()
+    fs_plugin = create_fs_tools_plugin()
     engine = (engine
         .with_executor("simulate", create_executor(simulate_executor))
         .with_executor("synthesize", create_executor(synthesize_executor))
@@ -54,16 +53,12 @@ def _re_register(engine, config, design_name):
         .with_executor("drc", create_executor(drc_executor))
         .with_executor("gds", create_executor(gds_executor))
         .with_executor("shell", create_shell_executor(["echo", "python3"]))
-        # restore 清空 extra_tools,需重新注册 7 个 tool
-        .with_tool(tools[0])
-        .with_tool(tools[1])
-        .with_tool(tools[2])
-        .with_tool(tools[3])
-        .with_tool(tools[4])
-        .with_tool(tools[5])
-        .with_tool(tools[6])
+        # 内置 fs tools 注册到每个 LLM step
+        .with_step_plugin(rtl_ids[0], fs_plugin)
         .with_hooks(_wrap_hooks(make_hooks(config)))
     )
+    for sid in rtl_ids[1:] + ["debug_fix", "drc_fix"]:
+        engine = engine.with_step_plugin(sid, fs_plugin)
     # 空响应纠正 + provider 日志(同 build_workflow)
     should_stop_cb, nudge_transform_cb = make_empty_response_nudge_hooks()
     engine = engine.with_hooks([
@@ -236,7 +231,7 @@ def cmd_restore(design_name: str, config_path: str):
         sys.exit(1)
     task_id = task_id_file.read_text().strip()
 
-    env = create_os_env(working_dir=".")
+    env = create_os_env(working_dir=str(Path(f"designs/{design_name}").resolve()))
     provider, _pricing = build_providers(config)
     from .design_config import load_design_config
     from pathlib import Path as _Path
@@ -248,12 +243,11 @@ def cmd_restore(design_name: str, config_path: str):
         judge=create_judge(make_judge_fn(config, rtl_ids=dcfg.rtl_step_ids)),
         env=env,
     )
-    engine = _re_register(engine, config, design_name)
+    engine = _re_register(engine, config, design_name, dcfg.rtl_step_ids)
     print(f"恢复到步骤: {engine.current_step()}")
     print(f"已完成: {len(engine.step_history())} 步")
     engine.run()
     print(f"流程结束,state={engine.state()}")
-
 
 def cmd_status(design_name: str):
     store_dir = f"designs/{design_name}/.taskstore"
