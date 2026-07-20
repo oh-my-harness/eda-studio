@@ -1,12 +1,15 @@
-"""日志/审计 hooks + 空响应纠正。
+"""日志/审计 hooks + 空响应纠正 + MaxTokens auto-continue。
 
 should_stop + transform_context 组合:
-- should_stop: turn 0 EndTurn 且无 tool_use(模型从未调过工具) → 返回 False
-  (继续 turn) + 标记。turn > 0 的 EndTurn 是正常完成,不触发。
-- transform_context: 检测标记 → 往 messages 追加 nudge(响应式反馈)
+- should_stop: MaxTokens 截断 → 返回 False(继续)让模型续输,最多 max_auto_continue 次。
+  turn 0 EndTurn 且无 tool_use → 返回 False(继续) + 标记 nudge。
+  其他情况 → 正常停止。
+- transform_context: 检测 nudge 标记 → 往 messages 追加 nudge user 消息。
 
 这是响应式纠错:模型出错时反馈,不在 prompt 里主动注入。
-每个 step 最多 nudge 一次;judge retry 重跑 step 时 turn 0 重新计数。
+每个 step 最多 nudge 一次;MaxTokens 续输有独立计数器。
+judge retry 重跑 step 时 turn 0 重新计数(但 auto_continue_count 不重置——
+一个 step 内的续输预算是全局的,避免复杂 step 反复截断重试)。
 """
 import datetime
 import logging
@@ -81,25 +84,49 @@ def _has_tool_use(content) -> bool:
     return any(b.get("type") == "tool_use" for b in content)
 
 
-def make_empty_response_nudge_hooks():
+def make_empty_response_nudge_hooks(max_auto_continue: int = 3):
     """创建 should_stop + transform_context hook 对,共享 nudge 标记。
 
-    should_stop: turn 0 EndTurn 且无 tool_use → 返回 False(继续 turn),
-    标记 need_nudge。turn > 0 的 EndTurn 或已调工具 → 正常停止。
-    每个 step 最多 nudge 一次;judge retry 重跑 step 时 turn_index 重置。
-    transform_context: 检测标记 → 往 messages 追加 nudge user 消息。
+    should_stop 逻辑:
+    1. MaxTokens 截断 → 返回 False(继续),让模型从断点续输。
+       续输次数上限 max_auto_continue,超限则停止(防失控)。
+       不需要 nudge —— 模型看到自己被截断的 assistant 消息会自动继续。
+    2. turn 0 EndTurn 且无 tool_use → 返回 False(继续) + 标记 need_nudge。
+       模型从未调过工具就结束,注入 nudge 提示必须调工具。
+    3. 其他情况(turn > 0 EndTurn / 已调工具)→ 正常停止。
+
+    transform_context: 检测 need_nudge 标记 → 往 messages 追加 nudge user 消息。
     """
     state = {"need_nudge": False}
+    auto_continue_count = 0
 
     def should_stop_cb(ctx: dict) -> bool:
+        nonlocal auto_continue_count
         stop_reason = ctx.get("stop_reason", "")
         turn_index = ctx.get("turn_index", 0)
         last_assistant = ctx.get("last_assistant") or {}
         content = last_assistant.get("content", [])
 
+        # MaxTokens 截断:模型输出被 max_tokens 截断,thinking/content 不完整。
+        # 返回 False 让 runtime 发下一个 API 请求,messages 里保留了被截断的
+        # assistant 消息,模型会从断点继续输出。不需要 nudge。
+        if stop_reason == "max_tokens":
+            if auto_continue_count < max_auto_continue:
+                auto_continue_count += 1
+                logger.info(
+                    f"MaxTokens 截断,auto-continue ({auto_continue_count}/{max_auto_continue})"
+                )
+                state["need_nudge"] = False
+                return False  # 继续下一个 turn,让模型续输
+            else:
+                logger.warning(
+                    f"MaxTokens 截断,auto-continue 次数耗尽({max_auto_continue}),停止"
+                )
+                state["need_nudge"] = False
+                return True
+
         # turn > 0 的 EndTurn 是正常完成(前面 turn 已调过工具)
-        # 非 EndTurn(如 MaxTokens)或已调工具 → 正常停止
-        if turn_index > 0 or stop_reason != "end_turn" or _has_tool_use(content):
+        if turn_index > 0 or _has_tool_use(content):
             state["need_nudge"] = False
             return True
 

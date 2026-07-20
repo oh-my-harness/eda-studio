@@ -54,9 +54,15 @@ def test_nudge_turn_gt0_empty_returns_true():
     ctx = {"turn_index": 1, "stop_reason": "end_turn", "last_assistant": {"content": []}}
     assert should_stop(ctx) is True
 
-def test_nudge_max_tokens_returns_true():
-    should_stop, _ = make_empty_response_nudge_hooks()
+def test_nudge_max_tokens_auto_continue():
+    """MaxTokens 截断时应返回 False(继续),让模型续输。"""
+    should_stop, _ = make_empty_response_nudge_hooks(max_auto_continue=3)
     ctx = {"turn_index": 0, "stop_reason": "max_tokens", "last_assistant": {"content": []}}
+    # 前 3 次返回 False(auto-continue)
+    assert should_stop(ctx) is False
+    assert should_stop(ctx) is False
+    assert should_stop(ctx) is False
+    # 第 4 次耗尽,返回 True(停止)
     assert should_stop(ctx) is True
 
 def test_nudge_transform_injects_message():
