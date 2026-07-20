@@ -84,32 +84,29 @@ def _has_tool_use(content) -> bool:
     return any(b.get("type") == "tool_use" for b in content)
 
 
-def make_empty_response_nudge_hooks(max_auto_continue: int = 3):
+def make_empty_response_nudge_hooks(max_auto_continue: int = 3, max_nudge: int = 3):
     """创建 should_stop + transform_context hook 对,共享 nudge 标记。
 
     should_stop 逻辑:
     1. MaxTokens 截断 → 返回 False(继续),让模型从断点续输。
        续输次数上限 max_auto_continue,超限则停止(防失控)。
-       不需要 nudge —— 模型看到自己被截断的 assistant 消息会自动继续。
-    2. turn 0 EndTurn 且无 tool_use → 返回 False(继续) + 标记 need_nudge。
-       模型从未调过工具就结束,注入 nudge 提示必须调工具。
-    3. 其他情况(turn > 0 EndTurn / 已调工具)→ 正常停止。
+    2. EndTurn 且无 tool_use → 返回 False(继续) + 标记 need_nudge。
+       注入 nudge 提示必须调工具。最多 nudge max_nudge 次,超限停止(防死循环)。
+    3. 已调工具 → 正常停止。
 
     transform_context: 检测 need_nudge 标记 → 往 messages 追加 nudge user 消息。
     """
     state = {"need_nudge": False}
     auto_continue_count = 0
+    nudge_count = 0
 
     def should_stop_cb(ctx: dict) -> bool:
-        nonlocal auto_continue_count
+        nonlocal auto_continue_count, nudge_count
         stop_reason = ctx.get("stop_reason", "")
-        turn_index = ctx.get("turn_index", 0)
         last_assistant = ctx.get("last_assistant") or {}
         content = last_assistant.get("content", [])
 
-        # MaxTokens 截断:模型输出被 max_tokens 截断,thinking/content 不完整。
-        # 返回 False 让 runtime 发下一个 API 请求,messages 里保留了被截断的
-        # assistant 消息,模型会从断点继续输出。不需要 nudge。
+        # MaxTokens 截断:模型输出被 max_tokens 截断。
         if stop_reason == "max_tokens":
             if auto_continue_count < max_auto_continue:
                 auto_continue_count += 1
@@ -117,7 +114,7 @@ def make_empty_response_nudge_hooks(max_auto_continue: int = 3):
                     f"MaxTokens 截断,auto-continue ({auto_continue_count}/{max_auto_continue})"
                 )
                 state["need_nudge"] = False
-                return False  # 继续下一个 turn,让模型续输
+                return False
             else:
                 logger.warning(
                     f"MaxTokens 截断,auto-continue 次数耗尽({max_auto_continue}),停止"
@@ -125,15 +122,21 @@ def make_empty_response_nudge_hooks(max_auto_continue: int = 3):
                 state["need_nudge"] = False
                 return True
 
-        # turn > 0 的 EndTurn 是正常完成(前面 turn 已调过工具)
-        if turn_index > 0 or _has_tool_use(content):
+        # 已调工具 → 正常停止
+        if _has_tool_use(content):
             state["need_nudge"] = False
             return True
 
-        # turn 0 EndTurn 且无 tool_use → 模型从未调过工具就结束
-        logger.info("turn 0 空响应(无 tool_use),注入 nudge")
-        state["need_nudge"] = True
-        return False  # 继续下一个 turn
+        # EndTurn 无 tool_use → nudge
+        if nudge_count < max_nudge:
+            nudge_count += 1
+            logger.info(f"空响应(无 tool_use),注入 nudge ({nudge_count}/{max_nudge})")
+            state["need_nudge"] = True
+            return False
+        else:
+            logger.warning(f"nudge 次数耗尽({max_nudge}),停止")
+            state["need_nudge"] = False
+            return True
 
     def transform_cb(ctx: dict) -> dict:
         if not state["need_nudge"]:
