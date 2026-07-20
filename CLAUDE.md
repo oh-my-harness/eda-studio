@@ -89,7 +89,7 @@ docker run -d --name eda-tools -v $(pwd)/designs:/work/designs -e PDK=sky130A hp
 
 ### 版本
 
-- **senza-sdk**(版本见 `pyproject.toml`,当前 0.4.3;从 PyPI 安装 `pip install senza-sdk`)
+- **senza-sdk**(版本见 `pyproject.toml`,当前 0.4.5;从 PyPI 安装 `pip install senza-sdk`)
 - import 名：`senza`（包名 `senza-sdk`）
 - abi3 wheel，支持 Python 3.9–3.14+
 
@@ -156,12 +156,11 @@ docker run -d --name eda-tools -v $(pwd)/designs:/work/designs -e PDK=sky130A hp
 - 超过重试次数 → `abort:done`
 
 ### EDA 工具调用安全
+EDA 工具**不作为 LLM tool**(太危险),而是作为 executor 步骤由 workflow 编排固定调用。LLM 只能通过内置 FsToolsPlugin(read/write/edit/bash)操作设计文件和报告。shell_safety 白名单 + denied_args 作为额外防护层。
 
-EDA 工具**不作为 LLM tool**（太危险），而是作为 executor 步骤由 workflow 编排固定调用。LLM 只能通过 file_tools（读写文件）和 report_tools（读报告摘要）操作。shell_safety 白名单 + denied_args 作为额外防护层。
+### max_tokens 配置(关键)
 
-### max_tokens 配置（关键）
-
-`build_workflow` 必须调用 `.with_max_tokens(32768)`。glm-5.2 等 reasoning 模型的 thinking 链约 8K token，senza 默认 `max_tokens=8192` 会导致 thinking 没结束就触发 MaxTokens 截断，content 和 tool_call 无法输出——表现为流程"卡住"无输出。
+`build_workflow` 调用 `.with_max_tokens(16384)`。glm-5.2 等 reasoning 模型的 thinking 链约 8K token,8192 会导致 thinking 没结束就触发 MaxTokens 截断,content 和 tool_call 无法输出——表现为流程"卡住"无输出。同时 `.with_thinking_level("high")` 与 omp 对齐(reasoning_effort=high)。
 
 ### 可见性与 Web UI
 
