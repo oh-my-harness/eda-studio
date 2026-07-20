@@ -30,7 +30,9 @@ def make_hooks(config: AppConfig):
     """返回 hook 闭包列表(before_turn/after_turn/after_tool_call)。"""
     def log_before_turn(ctx: dict) -> None:
         turn = ctx.get("turn_index", "?")
-        logger.info(f"▶ turn {turn} 开始")
+        sp = ctx.get("system_prompt")
+        sp_preview = (sp[:80] + "...") if sp and len(sp) > 80 else sp
+        logger.info(f"▶ turn {turn} 开始 system_prompt={sp_preview!r}")
 
     def log_after_turn(ctx: dict) -> None:
         turn = ctx.get("turn_index", "?")

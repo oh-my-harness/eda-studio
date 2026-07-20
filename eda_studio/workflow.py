@@ -42,6 +42,7 @@ def build_providers(config: AppConfig):
     if spec["type"] == "openai":
         provider = create_openai_provider(
             api_key=spec["api_key"], base_url=spec.get("base_url"),
+            thinking_scheme="reasoning_effort",  # 与 omp 一致:thinking_level → reasoning_effort
         )
     elif spec["type"] == "anthropic":
         provider = create_anthropic_provider(api_key=spec["api_key"])
@@ -213,7 +214,8 @@ def build_workflow(config: AppConfig, design_name: str) -> WorkflowEngine:
         .with_tool(tool_specs[8])
         .with_hooks(_wrap_hooks(make_hooks(config)))
         .with_task_store(f"designs/{design_name}/.taskstore")
-        .with_max_tokens(8192)  # 与 omp 一致;32768 会让 glm-5.2 thinking 过长导致连接超时
+        .with_max_tokens(16384)  # glm-5.2 thinking 动辄 8000+ tokens,8192 全被吃完;adapter timeout 已修复连接超时
+        .with_thinking_level("high")  # 与 omp 一致:reasoning_effort=high
         .with_max_retries(config.workflow_config.max_fix_retries)  # judge 返回 "retry" 时的重试上限
     )
 
