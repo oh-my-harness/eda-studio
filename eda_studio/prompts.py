@@ -20,10 +20,13 @@ RTL_MODULE_PROMPT = """你是一个数字电路设计专家。请根据以下需
 
 要求:
 1. 用 read_rtl 读取已写的模块了解接口风格(第一个模块跳过)
-2. 用 write_rtl 工具(filename 参数传 "{file}")将代码写入
-3. 用 list_design_files 确认文件已写入
-4. 不要写 testbench,不要写其他模块
-"""
+2. 用 write_rtl 工具(filename 参数传 "{file}")写入模块代码
+3. 如果模块较大,用 append_rtl 分多次追加(先写端口和骨架,再追加状态机/逻辑)
+4. 用 list_design_files 确认文件已写入
+5. 不要写 testbench,不要写其他模块
+
+重要:每次 write_rtl/append_rtl 的 content 不要太长(建议 <100 行)。
+如果一次写不完,先 write_rtl 写骨架,再用 append_rtl 逐步追加。"""
 
 DEBUG_FIX_PROMPT = """仿真失败了。请分析报告并修复 RTL。
 

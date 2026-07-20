@@ -77,6 +77,14 @@ def _build_tools(design_dir: Path) -> list:
         },
         "required": ["filename", "content"],
     })
+    append_rtl_schema = json.dumps({
+        "type": "object",
+        "properties": {
+            "filename": {"type": "string", "description": "文件名,如 uart_tx.v"},
+            "content": {"type": "string", "description": "要追加的 Verilog 代码内容"},
+        },
+        "required": ["filename", "content"],
+    })
     read_rtl_schema = json.dumps({
         "type": "object",
         "properties": {"filename": {"type": "string"}},
@@ -90,7 +98,8 @@ def _build_tools(design_dir: Path) -> list:
     })
 
     return [
-        create_tool("write_rtl", "写 Verilog 文件", write_rtl_schema, file_tools["write_rtl"]),
+        create_tool("write_rtl", "写 Verilog 文件(全量覆盖)", write_rtl_schema, file_tools["write_rtl"]),
+        create_tool("append_rtl", "追加内容到 Verilog 文件末尾(分多次写大模块)", append_rtl_schema, file_tools["append_rtl"]),
         create_tool("read_rtl", "读 Verilog 文件", read_rtl_schema, file_tools["read_rtl"]),
         create_tool("list_design_files", "列出工作区文件", no_arg_schema, file_tools["list_design_files"]),
         create_tool("read_sim_report", "读仿真报告", no_arg_schema, report_tools["read_sim_report"]),
@@ -118,7 +127,7 @@ def build_workflow(config: AppConfig, design_name: str) -> WorkflowEngine:
         rtl_steps.append({
             "id": sid, "name": m.name,
             "prompt": prompts[sid],
-            "allowed_tools": ["write_rtl", "read_rtl", "list_design_files"],
+            "allowed_tools": ["write_rtl", "append_rtl", "read_rtl", "list_design_files"],
         })
     fixed_steps = [
         {"id": "simulate", "name": "仿真验证", "executor": "simulate"},
@@ -181,7 +190,7 @@ def build_workflow(config: AppConfig, design_name: str) -> WorkflowEngine:
         .with_executor("gds", create_executor(gds_executor))
         .with_executor("render", create_executor(render_executor))
         .with_executor("shell", create_shell_executor(["echo", "python3"]))
-        # 7 个 tool(从 _build_tools 拿已构建好的 Tool 对象)
+        # 8 个 tool(write/append/read/list + report + sdc)
         .with_tool(tool_specs[0])
         .with_tool(tool_specs[1])
         .with_tool(tool_specs[2])
@@ -189,6 +198,7 @@ def build_workflow(config: AppConfig, design_name: str) -> WorkflowEngine:
         .with_tool(tool_specs[4])
         .with_tool(tool_specs[5])
         .with_tool(tool_specs[6])
+        .with_tool(tool_specs[7])
         .with_hooks(_wrap_hooks(make_hooks(config)))
         .with_task_store(f"designs/{design_name}/.taskstore")
         .with_max_tokens(8192)  # 与 omp 一致;32768 会让 glm-5.2 thinking 过长导致连接超时
