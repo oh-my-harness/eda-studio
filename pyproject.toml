@@ -6,7 +6,7 @@ license = {text = "MIT"}
 authors = [{name = "oh-my-harness"}]
 requires-python = ">=3.9"
 dependencies = [
-    "senza-sdk>=0.4.5",
+    "senza-sdk>=0.4.6",
     "pyyaml>=6.0",
     "fastapi>=0.100",
     "uvicorn[standard]>=0.20",

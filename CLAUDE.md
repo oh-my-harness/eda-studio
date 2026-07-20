@@ -89,7 +89,7 @@ docker run -d --name eda-tools -v $(pwd)/designs:/work/designs -e PDK=sky130A hp
 
 ### 版本
 
-- **senza-sdk**(版本见 `pyproject.toml`,当前 0.4.5;从 PyPI 安装 `pip install senza-sdk`)
+- **senza-sdk**(版本见 `pyproject.toml`,当前 0.4.6;从 PyPI 安装 `pip install senza-sdk`)
 - import 名：`senza`（包名 `senza-sdk`）
 - abi3 wheel，支持 Python 3.9–3.14+
 
