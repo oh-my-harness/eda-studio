@@ -24,9 +24,7 @@ from .config import AppConfig
 from .prompts import build_prompts, load_requirement
 from .judge import make_judge_fn
 from .hooks import make_hooks, make_provider_response_logger, make_empty_response_nudge_hooks
-from .plugin import (
-    create_system_prompt_plugin, RTL_SYSTEM, DEBUG_FIX_SYSTEM, DRC_FIX_SYSTEM,
-)
+from .plugin import RTL_SYSTEM, DEBUG_FIX_SYSTEM, DRC_FIX_SYSTEM
 from .executors import (
     simulate_executor, synthesize_executor, pnr_executor,
     drc_executor, gds_executor, render_executor,
@@ -144,17 +142,16 @@ def build_workflow(config: AppConfig, design_name: str) -> WorkflowEngine:
         .with_executor("gds", create_executor(gds_executor))
         .with_executor("render", create_executor(render_executor))
         .with_executor("shell", create_shell_executor(["echo", "python3"]))
-        # 内置 fs tools(read/write/edit/bash)注册到每个 LLM step
-        # rtl_*/debug_fix/drc_fix 共享同一个 FsToolsPlugin 实例
-        .with_step_plugin(rtl_ids[0], fs_plugin)
         .with_hooks(_wrap_hooks(make_hooks(config)))
         .with_task_store(f"designs/{design_name}/.taskstore")
         .with_max_tokens(16384)  # glm-5.2 thinking 动辄 8000+ tokens,8192 全被吃完;adapter timeout 已修复连接超时
         .with_thinking_level("high")  # 与 omp 一致:reasoning_effort=high
         .with_max_retries(config.workflow_config.max_fix_retries)  # judge 返回 "retry" 时的重试上限
     )
-    # FsToolsPlugin 注册到其余 LLM step(rtl_ids[0] 已注册)
-    for sid in rtl_ids[1:] + ["debug_fix", "drc_fix"]:
+    # FsToolsPlugin 通过 with_step_plugin 注册到每个 LLM step。
+    # 注意:with_step_plugin 是 insert(覆盖),一个 step 只能有一个 plugin。
+    # system_prompt 改用 before_run hook(见下方),不占用 with_step_plugin 槽位。
+    for sid in rtl_ids + ["debug_fix", "drc_fix"]:
         engine = engine.with_step_plugin(sid, fs_plugin)
 
     # 空响应纠正:EndTurn 无 tool_use → should_stop 返回 False(继续 turn)
@@ -162,20 +159,26 @@ def build_workflow(config: AppConfig, design_name: str) -> WorkflowEngine:
     # nudge 计数在每次 step run 开始时重置(before_run hook)。
     should_stop_cb, nudge_transform_cb, reset_nudge = make_empty_response_nudge_hooks()
     # provider 响应日志:记录 HTTP 状态码/延迟/token 用量(诊断用)
+    # system_prompt 通过 before_run hook 设置(with_step_plugin 是 insert 覆盖,
+    # 不能同时注册 FsToolsPlugin 和 system_prompt plugin)。
+    # 根据 prompt_text 内容特征匹配 step 类型。
+    def set_system_prompt_cb(ctx: dict):
+        reset_nudge()
+        prompt_text = ctx.get("prompt_text", "")
+        if "DRC" in prompt_text or "drc" in prompt_text:
+            sp = DRC_FIX_SYSTEM
+        elif "仿真" in prompt_text or "sim" in prompt_text.lower():
+            sp = DEBUG_FIX_SYSTEM
+        else:
+            sp = RTL_SYSTEM
+        return {"system_prompt": sp, "additional_messages": []}
+
     engine = engine.with_hooks([
         create_should_stop_hook(should_stop_cb),
         create_transform_context_hook(nudge_transform_cb),
         create_after_provider_response_hook(make_provider_response_logger()),
-        create_before_run_hook(lambda ctx: reset_nudge()),
+        create_before_run_hook(set_system_prompt_cb),
     ])
-
-    # system_prompt plugin:每个 LLM step 都要有 system prompt,
-    # 告诉模型角色和必须调工具(无 system prompt 时 glm-5.2 会只 thinking 不调工具)
-    for m in dcfg.modules:
-        engine = engine.with_step_plugin(f"rtl_{m.id}", create_system_prompt_plugin(RTL_SYSTEM))
-    engine = engine.with_step_plugin("debug_fix", create_system_prompt_plugin(DEBUG_FIX_SYSTEM))
-    engine = engine.with_step_plugin("drc_fix", create_system_prompt_plugin(DRC_FIX_SYSTEM))
-
     # context 变量:design_dir / docker_config / shell_config。
     # 不把整个 config 放进 context,避免 API key 落盘到 taskstore。
     # senza 偏差:set_context_variable 要求 JSON 可序列化值,
