@@ -12,9 +12,9 @@ Usage:
 
 senza API 偏差(以实际 pyi/runtime 为准):
 1. WorkflowEngine.total_cost() 返回 dict(含 total_cost 字段),非 float。
-   cmd_run 用 .get("total_cost", 0.0) 取值;PricingProvider 无处挂载到
-   WorkflowEngine(仅 HarnessBuilder 有 .pricing()),因此实际值常为 0.0
-   ——这是已知 SDK 限制,不修复。
+   cmd_run 用 .get("total_cost", 0.0) 取值。PricingProvider 通过
+   WorkflowEngine.with_pricing() 挂载(Senza #20 修复),build_workflow
+   已调用,total_cost 反映真实成本。
 2. set_context_variable 要求 JSON 可序列化值,dataclass 实例需 asdict()。
 3. WorkflowEngine.restore 是 classmethod,签名:
    restore(task_store_dir, task_id, provider, model, judge,
