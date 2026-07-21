@@ -1,7 +1,7 @@
 """verilator 仿真 executor。"""
 import subprocess
-from pathlib import Path
-from ..shell_safety import run_shell, to_container_cwd, to_container_path, ShellSafetyError
+
+from ..shell_safety import ShellSafetyError, run_shell, to_container_cwd, to_container_path
 from .base import ExecutorContext
 
 

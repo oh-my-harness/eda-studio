@@ -1121,7 +1121,7 @@ designs/uart/
 
 依赖声明见 [`pyproject.toml`](../../pyproject.toml)(senza-sdk + pyyaml + fastapi/uvicorn/websockets)。
 
-> **开发期安装**：`./scripts/install-senza-dev.sh` 从本地 `../Senza` 仓库 editable 安装（`maturin develop`），改 Senza 源码后重跑即可更新。Senza 的 Cargo.toml 用 git rev 锁定 runtime commit（`senza-pkg/runtime.lock`），从 GitHub fetch——不依赖本地 runtime checkout。详见 CLAUDE.md「开发环境」。
+> **开发期安装**：`./scripts/install-senza-dev.sh` 从本地 `../Senza` 仓库 editable 安装（`maturin develop`），改 Senza 源码后重跑即可更新。Senza 的 Cargo.toml 用 git rev 锁定 runtime commit（`senza-pkg/runtime.lock`），从 GitHub fetch——不依赖本地 runtime checkout。详见 docs/development.md「开发环境」。
 
 ### EDA 工具（Docker 镜像）
 
@@ -1209,8 +1209,8 @@ docker exec -w /work/designs/uart/sim eda-tools bash -lc 'verilator --binary ...
 
 ## 11. 不做的事
 
-- 不修改 Senza / Runtime 源码（本项目是纯消费者，但**可以查看**上游源码用于理解行为和定位问题，见 CLAUDE.md「Issue 路由」）
-- 遇到上游功能不足或 bug，按 CLAUDE.md「Issue 路由」提 issue（Senza Python 接口 → Senza 仓库；Runtime Rust 核心 → Runtime 仓库），不自行绕过
+- 不修改 Senza / Runtime 源码（本项目是纯消费者，但**可以查看**上游源码用于理解行为和定位问题，见 docs/development.md「Issue 路由」）
+- 遇到上游功能不足或 bug，按 docs/development.md「Issue 路由」提 issue（Senza Python 接口 → Senza 仓库；Runtime Rust 核心 → Runtime 仓库），不自行绕过
 - 不做 EDA 工具安装脚本
 - 不做 Web UI
 - 不做工业级 PPA 优化

@@ -1,8 +1,10 @@
-import pytest
 from pathlib import Path
-from unittest.mock import patch, MagicMock
-from eda_studio.shell_safety import run_shell, ShellSafetyError
-from eda_studio.config import ShellConfig, DockerConfig
+from unittest.mock import MagicMock, patch
+
+import pytest
+
+from eda_studio.config import DockerConfig, ShellConfig
+from eda_studio.shell_safety import ShellSafetyError, run_shell
 
 SHELL = ShellConfig(allowed_commands=["verilator", "yosys", "echo"], denied_args=["rm", "sudo", ";", "|"])
 DOCKER = DockerConfig(image="img", container="eda-tools", workdir="/work/designs", pdk="sky130A")
@@ -71,8 +73,8 @@ def test_relative_cwd_works(tmp_path, monkeypatch):
 
 def test_denied_semicolon_not_in_default(tmp_path):
     """P0 #2: synthesize yosys 脚本含 ';',默认 config 不应再 deny ';'。"""
+
     from eda_studio.config import load_config
-    import shutil
     repo_cfg = Path(__file__).resolve().parents[1] / "config.example.yaml"
     cfg = load_config(str(repo_cfg))
     assert ";" not in cfg.shell_config.denied_args

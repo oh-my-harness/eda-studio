@@ -1,7 +1,5 @@
 """cmd_run 最终状态表测试。"""
 import json
-from pathlib import Path
-import pytest
 
 
 def _make_taskstore(tmp_path, design, step_history):

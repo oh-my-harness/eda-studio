@@ -97,7 +97,8 @@ def create_app(
         workflow_runner: callable(state, design_name) 跑 workflow。
         port: uvicorn 监听端口(httpx 调本机 REST 用)。
     """
-    from nicegui import ui, app
+    from nicegui import app, ui
+
     from .server import register_api_routes
 
     state = AppState()

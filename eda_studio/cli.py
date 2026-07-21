@@ -36,12 +36,13 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from senza import (
-    WorkflowEngine, create_os_env,
+    WorkflowEngine,
+    create_os_env,
 )
 
 from .config import load_config
-from .workflow import build_workflow, build_providers, _session_base_dir
 from .judge import make_judge_fn
+from .workflow import _session_base_dir, build_providers, build_workflow
 
 logger = logging.getLogger(__name__)
 
@@ -84,11 +85,11 @@ def _print_event(event: dict) -> None:
         elif ptype == "message_end":
             kind = (prog.get("kind") or "").lower()
             if "progress" in kind:
-                print(f"  💭 模型思考中...")
+                print("  💭 模型思考中...")
     elif etype == "paused":
         print(f"⏸ 暂停: {event.get('reason', '')}")
     elif etype == "resumed":
-        print(f"▶ 恢复")
+        print("▶ 恢复")
     elif etype == "failed":
         print(f"✗ 失败: {event.get('error', '')}")
     elif etype == "cancelled":
@@ -217,7 +218,7 @@ def cmd_run(design_name: str, config_path: str):
     if gds.exists():
         print(f"✓ GDS 产物: {gds}")
     else:
-        print(f"✗ 未产出 GDS")
+        print("✗ 未产出 GDS")
     _print_run_summary(design_name)
 
 
@@ -377,10 +378,10 @@ def cmd_init(name: str) -> int:
 
     shutil.copytree(src, dst)
     print(f"✓ 已初始化 {name} → {dst}")
-    print(f"  下一步:")
-    print(f"    docker run -d --name eda-tools -v $(pwd)/designs:/work/designs \\")
-    print(f"      -e PDK=sky130A hpretl/iic-osic-tools:latest --skip sleep infinity")
-    print(f"    eda-studio check")
+    print("  下一步:")
+    print("    docker run -d --name eda-tools -v $(pwd)/designs:/work/designs \\")
+    print("      -e PDK=sky130A hpretl/iic-osic-tools:latest --skip sleep infinity")
+    print("    eda-studio check")
     print(f"    eda-studio run {name}")
     return 0
 
@@ -404,22 +405,51 @@ def _check_api_key(config_path: str) -> tuple:
         cfg = load_config(config_path)
         key = cfg.provider_spec.get("api_key", "")
         if not key:
-            return (False, "API key 为空", "export OPENAI_API_KEY=... 并在 config.yaml 用 ${OPENAI_API_KEY}")
+            ptype = cfg.provider_spec.get("type", "openai")
+            env_var = "ANTHROPIC_API_KEY" if ptype == "anthropic" else "OPENAI_API_KEY"
+            return (False, "API key 为空", f"export {env_var}=... 并在 config.yaml 用 ${{{env_var}}}")
         return (True, f"API key 已设置({key[:4]}...{key[-4:]})", None)
     except Exception as e:
         return (False, f"读取 config 失败: {e}", None)
 
 
 def _check_api_reachable(config_path: str) -> tuple:
-    """检查 API 端点可达 + 模型可用。"""
+    """检查 API 端点可达 + 模型可用。支持 OpenAI 兼容和 Anthropic 两种 provider。"""
     try:
         cfg = load_config(config_path)
         key = cfg.provider_spec.get("api_key", "")
+        model = cfg.model
+        ptype = cfg.provider_spec.get("type", "openai")
+
+        if ptype == "anthropic":
+            base_url = cfg.provider_spec.get("base_url") or "https://api.anthropic.com"
+            base_url = base_url.rstrip("/")
+            if not base_url.endswith("/v1"):
+                base_url += "/v1"
+            url = base_url + "/messages"
+            body = json.dumps({
+                "model": model,
+                "messages": [{"role": "user", "content": "ping"}],
+                "max_tokens": 4,
+            }).encode()
+            req = urllib.request.Request(url, data=body, headers={
+                "Content-Type": "application/json",
+                "x-api-key": key,
+                "anthropic-version": "2023-06-01",
+            })
+            t0 = time.monotonic()
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                data = json.loads(resp.read())
+                elapsed = (time.monotonic() - t0) * 1000
+                if data.get("content"):
+                    return (True, f"API 端点可达({base_url}, {elapsed:.0f}ms), 模型 {model} 可用", None)
+                return (False, f"API 响应无 content: {data}", "检查 model 名是否正确")
+
+        # OpenAI 兼容 provider
         base_url = cfg.provider_spec.get("base_url") or "https://api.openai.com/v1"
         # base_url 可能不含 /v1(如 http://api.example.com/),自动补
         if not base_url.rstrip("/").endswith("/v1"):
             base_url = base_url.rstrip("/") + "/v1"
-        model = cfg.model
         url = base_url + "/chat/completions"
         body = json.dumps({
             "model": model,

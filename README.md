@@ -20,20 +20,26 @@ EDA Studio 本身也是 Senza 的教学项目:它用一个真实复杂场景(EDA
 ## 快速开始
 
 ```bash
-# 1. 安装(含 senza-sdk from PyPI)
-pip install -e .
+# 1. 安装(含 senza-sdk from PyPI + 开发依赖)
+pip install -e ".[dev]"
 
-# 2. 初始化示例 design(从 templates/ 复制)
+# 2. 配置 API key(复制 .env.example,填入真实 key)
+cp .env.example .env && source .env
+
+# 3. 复制配置文件(默认用 glm-5.2,可改 model/api_key)
+cp config.example.yaml config.yaml
+
+# 4. 初始化示例 design(从 templates/ 复制)
 eda-studio init uart
 
-# 3. 启动 EDA 工具容器(Verilator/Yosys/OpenROAD/Magic/KLayout)
+# 5. 启动 EDA 工具容器(Verilator/Yosys/OpenROAD/Magic/KLayout)
 docker run -d --name eda-tools -v $(pwd)/designs:/work/designs \
   -e PDK=sky130A hpretl/iic-osic-tools:latest --skip sleep infinity
 
-# 4. 预检环境(config / API / docker / EDA 工具 / PDK)
+# 6. 预检环境(config / API / docker / EDA 工具 / PDK)
 eda-studio check
 
-# 5. 运行 RTL→GDS 全流程
+# 7. 运行 RTL→GDS 全流程
 eda-studio run uart
 # 或启动桌面应用(NiceGUI 原生窗口)
 eda-studio gui
@@ -43,12 +49,11 @@ eda-studio serve --port 3000
 
 ## 模型要求
 
-需要能写可综合 Verilog 的强模型。已验证:
-
 - **glm-5.2** — 开发主用模型,稳定通过全流程
 - **gpt-4o** — 可用
+- **Claude (Anthropic)** — 可用;在 `config.yaml` 中设置 `provider.type: anthropic`,`api_key: ${ANTHROPIC_API_KEY}`
 
-弱模型(如小参数模型)可能在 RTL 设计阶段失败(语法错误/不可综合)。配置:复制 `config.example.yaml` 为 `config.yaml`,填入 API key/端点/模型名。支持 `${ENV_VAR}` 展开。
+弱模型(如小参数模型)可能在 RTL 设计阶段失败(语法错误/不可综合)。配置:复制 `config.example.yaml` 为 `config.yaml`,填入 API key/端点/模型名。支持 `${ENV_VAR}` 展开。OpenAI 兼容 provider(`type: openai`)和 Anthropic(`type: anthropic`)二选一。
 
 ## 命令
 
@@ -134,7 +139,19 @@ eda_studio/
 └── templates/          # 示例 design(uart/i2c)
 ```
 
-详见 [CLAUDE.md](CLAUDE.md) 和 [docs/](docs/)。
+详见 [docs/development.md](docs/development.md) 和 [docs/](docs/)。
+
+## 从源码开发 Senza
+
+如需同时修改 Senza 的 Rust 源码(上游 SDK),可用 `scripts/install-senza-dev.sh`
+从本地 Senza checkout editable 安装:
+
+```bash
+# 假设 Senza 在 ../Senza
+./scripts/install-senza-dev.sh
+```
+
+详见 [scripts/install-senza-dev.sh](scripts/install-senza-dev.sh)。
 
 ## 贡献
 

@@ -1,13 +1,12 @@
-import pytest
-from pathlib import Path
-from unittest.mock import patch, MagicMock
-from eda_studio.executors.simulate import simulate_executor
-from eda_studio.executors.synthesize import synthesize_executor
-from eda_studio.executors.pnr import pnr_executor
+from unittest.mock import MagicMock, patch
+
+from eda_studio.config import DockerConfig, ShellConfig
 from eda_studio.executors.drc import drc_executor
 from eda_studio.executors.gds import gds_executor
+from eda_studio.executors.pnr import pnr_executor
+from eda_studio.executors.simulate import simulate_executor
+from eda_studio.executors.synthesize import synthesize_executor
 from eda_studio.shell_safety import ShellSafetyError
-from eda_studio.config import ShellConfig, DockerConfig
 
 SHELL = ShellConfig(allowed_commands=["verilator", "yosys", "openroad", "magic", "klayout"], denied_args=["rm"])
 DOCKER = DockerConfig(image="img", container="eda-tools", workdir="/work/designs", pdk="sky130A")

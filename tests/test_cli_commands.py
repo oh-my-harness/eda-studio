@@ -1,8 +1,5 @@
 """init/check CLI 子命令测试。不依赖真实 EDA 工具和 LLM API。"""
-import sys
-from pathlib import Path
 from unittest.mock import patch
-import pytest
 
 
 def test_init_copies_template(tmp_path, monkeypatch):
@@ -74,6 +71,79 @@ def test_check_config_ok(tmp_path, monkeypatch):
     assert rc == 1
 
 
+def test_check_anthropic_pings_messages_endpoint(tmp_path, monkeypatch):
+    """provider.type: anthropic 时,_check_api_reachable 走 /v1/messages + x-api-key 路径。
+    用不可达 base_url 验证它确实发起了请求(而非跳过)。"""
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "config.yaml").write_text(
+        "provider:\n"
+        "  type: anthropic\n"
+        "  api_key: sk-ant-test\n"
+        "  base_url: http://127.0.0.1:1\n"  # 不可能达,避免真连 API
+        "model: claude-sonnet-4-5\n"
+        "pricing:\n"
+        "  claude-sonnet-4-5:\n"
+        "    input_per_mtok: 3.0\n"
+        "    output_per_mtok: 15.0\n"
+        "budget:\n"
+        "  limit: 5.0\n"
+        "  exceeded_action: stop\n"
+        "workflow:\n"
+        "  max_steps: 50\n"
+        "  max_fix_retries: 3\n"
+        "shell:\n"
+        "  allowed_commands: [\"verilator\"]\n"
+        "  denied_args: [\"rm\"]\n"
+        "docker:\n"
+        "  image: hpretl/iic-osic-tools:latest\n"
+        "  container: eda-tools\n"
+        "  workdir: /work/designs\n"
+        "  pdk: sky130A\n"
+    )
+    from eda_studio.cli import _check_api_key, _check_api_reachable
+    ok_key, detail_key, hint_key = _check_api_key("config.yaml")
+    assert ok_key, f"anthropic key check 应通过: {detail_key}"
+    # 用不可达端点,应返回失败(说明确实发起了 ping,而非跳过)
+    ok_api, detail_api, hint_api = _check_api_reachable("config.yaml")
+    assert not ok_api, f"不可达端点应返回失败: {detail_api}"
+    assert "不可达" in detail_api
+
+
+def test_check_anthropic_empty_key_hints_correct_env(tmp_path, monkeypatch):
+    """anthropic key 为空时,提示指向 ANTHROPIC_API_KEY(非 OPENAI_API_KEY)。"""
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "config.yaml").write_text(
+        "provider:\n"
+        "  type: anthropic\n"
+        "  api_key: \"\"\n"
+        "  base_url: null\n"
+        "model: claude-sonnet-4-5\n"
+        "pricing:\n"
+        "  claude-sonnet-4-5:\n"
+        "    input_per_mtok: 3.0\n"
+        "    output_per_mtok: 15.0\n"
+        "budget:\n"
+        "  limit: 5.0\n"
+        "  exceeded_action: stop\n"
+        "workflow:\n"
+        "  max_steps: 50\n"
+        "  max_fix_retries: 3\n"
+        "shell:\n"
+        "  allowed_commands: [\"verilator\"]\n"
+        "  denied_args: [\"rm\"]\n"
+        "docker:\n"
+        "  image: hpretl/iic-osic-tools:latest\n"
+        "  container: eda-tools\n"
+        "  workdir: /work/designs\n"
+        "  pdk: sky130A\n"
+    )
+    from eda_studio.cli import _check_api_key
+    ok, detail, hint = _check_api_key("config.yaml")
+    assert not ok
+    assert "ANTHROPIC_API_KEY" in hint
+    assert "OPENAI" not in hint
+
+
 def test_cmd_restore_passes_session_base_dir(tmp_path, monkeypatch):
     """cmd_restore 构造 engine 时传了 session_base_dir(通过环境变量覆盖验证)。"""
     monkeypatch.chdir(tmp_path)
@@ -110,7 +180,7 @@ def test_cmd_restore_passes_session_base_dir(tmp_path, monkeypatch):
     store_dir.mkdir()
     (store_dir / "task_id").write_text("task-test-id-1234")
     # mock WorkflowEngine.restore,验证 session_base_dir 传入
-    from unittest.mock import patch, MagicMock
+    from unittest.mock import MagicMock
     with patch("eda_studio.cli.WorkflowEngine") as MockEngine:
         mock_engine = MagicMock()
         mock_engine.current_step.return_value = "rtl_tx"

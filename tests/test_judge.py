@@ -1,9 +1,17 @@
+from eda_studio.config import AppConfig, DockerConfig, ShellConfig, WorkflowConfig
 from eda_studio.judge import (
-    make_judge_fn, _rtl_handler, _simulate_handler, _debug_fix_handler,
-    _synthesize_handler, _pnr_handler, _drc_fix_handler,
-    _drc_handler, _gds_handler, _render_handler,
+    _debug_fix_handler,
+    _drc_fix_handler,
+    _drc_handler,
+    _gds_handler,
+    _pnr_handler,
+    _render_handler,
+    _rtl_handler,
+    _simulate_handler,
+    _synthesize_handler,
+    make_judge_fn,
 )
-from eda_studio.config import AppConfig, WorkflowConfig, ShellConfig, DockerConfig
+
 
 def make_config(max_fix=3):
     return AppConfig(
@@ -123,7 +131,9 @@ def test_render_done():
     assert _render_handler(ctx("render", success=True)) == "abort:done"
 
 from senza import CompositeJudge
-from eda_studio.judge import make_judge_fn, KNOWN_FIXED_STEPS
+
+from eda_studio.judge import KNOWN_FIXED_STEPS
+
 
 def test_make_judge_fn_returns_composite_judge():
     cj = make_judge_fn(make_config())
@@ -136,7 +146,9 @@ def test_known_fixed_steps_constant():
     )
 
 import inspect
+
 from eda_studio import judge as judge_module
+
 
 def test_fallback_returns_sentinel():
     """验证 make_judge_fn 源码中 fallback 返回哨兵字符串。

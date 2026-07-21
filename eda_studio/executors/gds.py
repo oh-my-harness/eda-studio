@@ -7,8 +7,8 @@ klayout 用 ruby 脚本(-r),RBA::Layout API 通过 LEFDEFReaderConfiguration
 instance,标准单元会变成独立 top cell(空方框,无真实版图)。
 """
 import subprocess
-from pathlib import Path
-from ..shell_safety import run_shell, to_container_path, ShellSafetyError
+
+from ..shell_safety import ShellSafetyError, run_shell, to_container_path
 from .base import ExecutorContext, find_pdk_files
 
 

@@ -1,5 +1,5 @@
+from eda_studio.config import AppConfig, DockerConfig, ShellConfig, WorkflowConfig
 from eda_studio.hooks import make_hooks, make_max_tokens_continue_hook
-from eda_studio.config import AppConfig, WorkflowConfig, ShellConfig, DockerConfig
 
 
 def make_config(action="stop"):

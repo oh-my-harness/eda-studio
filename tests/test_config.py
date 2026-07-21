@@ -1,6 +1,8 @@
 import textwrap
 from pathlib import Path
-from eda_studio.config import load_config, AppConfig, WorkflowConfig, ShellConfig, DockerConfig
+
+from eda_studio.config import AppConfig, DockerConfig, ShellConfig, WorkflowConfig, load_config
+
 
 def write_cfg(tmp_path: Path, content: str) -> Path:
     p = tmp_path / "config.yaml"

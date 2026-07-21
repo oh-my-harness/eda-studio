@@ -3,6 +3,7 @@ import os
 import re
 from dataclasses import dataclass
 from pathlib import Path
+
 import yaml
 
 _ENV_PATTERN = re.compile(r"\$\{([A-Z_][A-Z0-9_]*)\}")

@@ -8,10 +8,9 @@ gdstk+matplotlib 不依赖 X11,在容器内直接出图。
 """
 import subprocess
 import textwrap
-from pathlib import Path
-from ..shell_safety import run_shell, to_container_path, ShellSafetyError
-from .base import ExecutorContext
 
+from ..shell_safety import ShellSafetyError, run_shell, to_container_path
+from .base import ExecutorContext
 
 # sky130 常用 layer/datatype → 颜色映射(近似 KLayout sky130A.lyp)。
 # 未列出的 layer 用默认灰色。

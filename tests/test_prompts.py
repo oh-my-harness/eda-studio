@@ -1,5 +1,11 @@
-from eda_studio.prompts import RTL_MODULE_PROMPT, DEBUG_FIX_PROMPT, DRC_FIX_PROMPT, load_requirement, build_prompts
 from eda_studio.design_config import ModuleSpec
+from eda_studio.prompts import (
+    DEBUG_FIX_PROMPT,
+    DRC_FIX_PROMPT,
+    RTL_MODULE_PROMPT,
+    build_prompts,
+    load_requirement,
+)
 
 
 def _make_modules():

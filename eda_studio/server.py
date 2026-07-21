@@ -118,6 +118,7 @@ def register_api_routes(
         if not state.design_name:
             return JSONResponse(status_code=404, content={"error": "no active design"})
         from pathlib import Path
+
         from .design_config import load_design_config
         dcfg = load_design_config(Path(f"designs/{state.design_name}"))
         steps = []

@@ -1,7 +1,7 @@
 """OpenROAD 布局布线 executor。floorplan 由 initialize_floorplan 生成,不用 read_def。"""
 import subprocess
-from pathlib import Path
-from ..shell_safety import run_shell, to_container_path, to_container_cwd, ShellSafetyError
+
+from ..shell_safety import ShellSafetyError, run_shell, to_container_path
 from .base import ExecutorContext, find_pdk_files
 
 

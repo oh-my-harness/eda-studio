@@ -1,7 +1,8 @@
 """EDA 工具命令执行:白名单检查 + docker exec 包装。"""
 import subprocess
 from pathlib import Path
-from .config import ShellConfig, DockerConfig
+
+from .config import DockerConfig, ShellConfig
 
 
 class ShellSafetyError(Exception):

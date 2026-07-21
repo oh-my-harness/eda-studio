@@ -60,6 +60,7 @@ def test_build_providers_returns_pricing():
     不触碰文件系统,故无需 chdir / 写 config.yaml / mkdir。
     """
     import yaml
+
     from eda_studio.config import AppConfig
     raw = yaml.safe_load(CFG_YAML)
     config = AppConfig(

@@ -2,8 +2,9 @@
 
 避免在 executor 里硬编码模块名/testbench 名。
 """
-from pathlib import Path
 from dataclasses import dataclass, field
+from pathlib import Path
+
 import yaml
 
 

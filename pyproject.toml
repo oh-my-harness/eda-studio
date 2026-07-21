@@ -6,7 +6,7 @@ license = {text = "MIT"}
 authors = [{name = "oh-my-harness"}]
 requires-python = ">=3.9"
 dependencies = [
-    "senza-sdk>=0.4.6",
+    "senza-sdk>=0.4.9",
     "pyyaml>=6.0",
     "fastapi>=0.100",
     "uvicorn[standard]>=0.20",
@@ -15,12 +15,40 @@ dependencies = [
     "pywebview>=5.0",
 ]
 
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0",
+    "ruff>=0.4",
+]
+
 [project.scripts]
 eda-studio = "eda_studio.cli:main"
 
 [build-system]
 requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
+
 [tool.setuptools]
 packages = ["eda_studio", "eda_studio.executors", "eda_studio.templates"]
 include-package-data = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+
+[tool.ruff]
+line-length = 100
+target-version = "py39"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I"]
+ignore = [
+    "E501",   # line length
+    "E701",   # multiple statements on one line (colon) — existing style
+    "E702",   # multiple statements on one line (semicolon)
+    "E741",   # ambiguous variable name `l`
+    "E402",   # module level import not at top (test_judge.py)
+]
+
+[tool.ruff.lint.per-file-ignores]
+"__init__.py" = ["F401"]

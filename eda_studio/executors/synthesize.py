@@ -1,7 +1,7 @@
 """yosys 综合 executor。"""
 import subprocess
-from pathlib import Path
-from ..shell_safety import run_shell, to_container_path, ShellSafetyError
+
+from ..shell_safety import ShellSafetyError, run_shell, to_container_path
 from .base import ExecutorContext, find_pdk_files
 
 

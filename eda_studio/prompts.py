@@ -5,7 +5,6 @@
 """
 from pathlib import Path
 
-
 RTL_MODULE_PROMPT = """你是一个数字电路设计专家。请根据以下需求设计模块。
 
 设计需求:

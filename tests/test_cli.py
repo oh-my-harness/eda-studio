@@ -1,5 +1,6 @@
 """CLI 测试:验证 argparse 路由(不真跑 engine,只 mock cmd_run/cmd_restore)。"""
 from unittest.mock import patch
+
 from eda_studio.cli import main
 
 CFG = (

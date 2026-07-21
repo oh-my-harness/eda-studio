@@ -1,16 +1,24 @@
+# provider: 二选一(openai 或 anthropic)
+#
+# OpenAI 兼容(provider.type: openai):
+#   支持 OpenAI / DeepSeek / 智谱 等兼容端点。
+#   base_url 留 null 走 OpenAI 官方;DeepSeek 等填对应的 /v1 根地址。
+#
+# Anthropic(provider.type: anthropic):
+#   使用 Claude 系列模型;api_key 填 ${ANTHROPIC_API_KEY},base_url 忽略。
 provider:
   type: openai
   api_key: ${OPENAI_API_KEY}
   base_url: null
 
-model: "gpt-4o"
+model: "glm-5.2"
 
 pricing:
-  gpt-4o:
-    input_per_mtok: 2.5
-    output_per_mtok: 10.0
-    cache_read_per_mtok: 1.25
-    cache_write_per_mtok: 2.5
+  glm-5.2:
+    input_per_mtok: 0.5
+    output_per_mtok: 2.0
+    cache_read_per_mtok: 0.25
+    cache_write_per_mtok: 0.5
 
 budget:
   limit: 5.0

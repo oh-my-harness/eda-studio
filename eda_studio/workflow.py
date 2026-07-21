@@ -9,26 +9,39 @@ senza API 偏差(以实际 pyi/runtime 为准):
    因此删除 brief 中的 `{"from":"gds","to":"done"}` 边(gds 之后由
    judge 返回 "done" 终止)。
 """
-from dataclasses import asdict
 import os
+from dataclasses import asdict
 from pathlib import Path
+
 from senza import (
-    WorkflowEngine, create_os_env, create_executor,
-    create_openai_provider, create_anthropic_provider,
-    create_pricing_provider, create_fs_tools_plugin,
-    create_before_turn_hook, create_after_turn_hook, create_after_tool_call_hook,
+    WorkflowEngine,
     create_after_provider_response_hook,
-    create_should_stop_hook, create_shell_executor,
+    create_after_tool_call_hook,
+    create_after_turn_hook,
+    create_anthropic_provider,
+    create_before_turn_hook,
+    create_executor,
+    create_fs_tools_plugin,
+    create_openai_provider,
+    create_os_env,
+    create_pricing_provider,
+    create_shell_executor,
+    create_should_stop_hook,
 )
+
 from .config import AppConfig
-from .prompts import build_prompts, load_requirement
-from .judge import make_judge_fn
-from .hooks import make_hooks, make_provider_response_logger, make_max_tokens_continue_hook
-from .plugin import RTL_SYSTEM, DEBUG_FIX_SYSTEM, DRC_FIX_SYSTEM
 from .executors import (
-    simulate_executor, synthesize_executor, pnr_executor,
-    drc_executor, gds_executor, render_executor,
+    drc_executor,
+    gds_executor,
+    pnr_executor,
+    render_executor,
+    simulate_executor,
+    synthesize_executor,
 )
+from .hooks import make_hooks, make_max_tokens_continue_hook, make_provider_response_logger
+from .judge import make_judge_fn
+from .plugin import DEBUG_FIX_SYSTEM, DRC_FIX_SYSTEM, RTL_SYSTEM
+from .prompts import build_prompts, load_requirement
 
 
 def _session_base_dir(design_name: str = "") -> str:
@@ -54,7 +67,9 @@ def build_providers(config: AppConfig):
             thinking_scheme="reasoning_effort",  # 与 omp 一致:thinking_level → reasoning_effort
         )
     elif spec["type"] == "anthropic":
-        provider = create_anthropic_provider(api_key=spec["api_key"])
+        provider = create_anthropic_provider(
+            api_key=spec["api_key"], base_url=spec.get("base_url"),
+        )
     else:
         raise ValueError(f"未知 provider type: {spec['type']}")
     pricing = create_pricing_provider(config.pricing_spec)
