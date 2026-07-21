@@ -38,7 +38,7 @@ workflow session 按 `session_root / task_id / step_id-attempt_seq` 隔离,主 s
 
 ```
 <session_root>/                    ← 环境变量 EDA_STUDIO_SESSION_DIR 决定,默认 "sessions"
-  <task_id>/                       ← runtime 拼,每次 run 独立
+    task-<uuid>/                    ← runtime 拼,每次 run 独立 (TaskId.0 形如 "task-<uuid>")
     <step_id>-<attempt_seq>/       ← runtime 拼,每次执行(含 retry)独立
       <session_id>/                ← 主 step session (factory 创建)
       sub-agents/<session_id>/     ← 该次执行派生的 sub-agent
@@ -60,14 +60,14 @@ workflow session 按 `session_root / task_id / step_id-attempt_seq` 隔离,主 s
 
 | 仓库 | 文件 | 改动 | 执行者 |
 |------|------|------|--------|
-| eda-studio | `workflow.py`, `cli.py` | 读环境变量 + 2 处传 `session_base_dir` | eda-studio 维护者(本仓库) |
+| eda-studio | `workflow.py`, `cli.py` | 新增 1 个 `_session_base_dir()` helper + 2 处调用点传 `session_base_dir` | eda-studio 维护者(本仓库) |
 | Senza | `pyworkflow.rs` | 无实质改动(`session_base_dir` 参数已存在,透传即可) | — |
 | runtime | `spawn/spawner.rs` | `JsonlSessionFactory::create` 去 `sub-agents/` 硬编码 | 提 issue 给 runtime 仓库 |
 | runtime | `workflow/engine/runner.rs` | `run_llm_step` 拼 task_id/step-attempt 前缀;`build_step_spawner` 拼 sub-agents 后缀 | 提 issue 给 runtime 仓库 |
 
 ### 实现分工
 
-- **eda-studio 侧**(本仓库自行实施):`workflow.py` + `cli.py` 改动。**必须等上游 runtime issue 解决后才能接入**(否则 runtime 仍硬编码 `sub-agents/`,eda-studio 传 `session_base_dir` 只能做 design 级隔离,达不到完整布局)。
+- **eda-studio 侧**(本仓库自行实施):`workflow.py` + `cli.py` 改动。**必须等上游 runtime issue 解决后才能接入**(否则 runtime 仍硬编码 `sub-agents/` 子目录,eda-studio 传 `session_base_dir` 只能让所有 session 落到 `<session_root>/sub-agents/` 下,达不到 task_id/step 级隔离)。
 - **runtime 侧**(提 issue,由 runtime 维护者推进):
   - `JsonlSessionFactory::create` 去掉 `base_dir.join("sub-agents")` 硬编码。
   - `run_llm_step` 拼 `session_base_dir/<task_id>/<step_id>-<attempt_seq>` 前缀。
@@ -173,6 +173,7 @@ let spawner = Arc::new(self.build_step_spawner(bus.clone(), step.id(), attempt_s
 - **restore 路径一致性**:`task_id` 从外部传入(`TaskId`),restore 时 eda-studio 传同一个 task_id,runtime 用 `self.task_id` 拼路径 → restore 后新创建的 session 落到同一 `<task_id>/` 目录下。
 - **executor step 不创建 session**:仅 `run_llm_step` 调 factory,`run_executor_step` 不调。
 - **attempt_seq 准确性**:session 创建时本次 `StepRecord` 尚未 push,`step_history` filter count +1 即当前 attempt。retry(`Transition::Retry`)和 `StepExecutionPolicy.max_attempts` 都会重新进入 `run_llm_step`,各自产生新 attempt_seq。
+- **`restore_from_step` 场景**:`restore_from_step`(`runner.rs:158`)会 truncate `step_history` 中目标 step 及其下游 record,因此重跑时 `attempt_seq` 从 1 重新计数(被截断的 record 不再计入)。这会导致重跑的 session 目录与首次 run 的同名目录(如 `rtl_tx-1/`)路径相同但 session_id 不同,`<session_id>/` 子目录不冲突(uuid 唯一),`<step_id>-<attempt>/` 父目录会被复用。这是可接受的行为——`restore_from_step` 语义就是"从该步重跑",旧 session 仍保留在父目录下作为历史。
 
 ## eda-studio 改动细节
 
@@ -237,10 +238,9 @@ engine = WorkflowEngine.restore(
 ## 测试
 
 ### eda-studio 侧测试
-
-- `test_workflow.py`:验证 `build_workflow` 传出的 `session_base_dir` 等于环境变量值(或默认 `sessions`)。用 mock provider,不跑真实 LLM。
-- `test_cli_commands.py`:验证 `cmd_restore` 构造 engine 时传了 `session_base_dir`。
-- 环境变量覆盖测试:`EDA_STUDIO_SESSION_DIR=/tmp/foo` → `session_base_dir == "/tmp/foo"`。
+- `test_workflow.py`:验证 `_session_base_dir()` helper 返回值(默认 `sessions`,环境变量覆盖生效)。`build_workflow` 返回 `WorkflowEngine` 对象,runtime 不暴露内部 `session_base_dir` 字段,故不直接断言传入值,而是测 helper 单元逻辑 + 构造不抛异常。
+- `test_cli_commands.py`:验证 `cmd_restore` 在有 taskstore 的情况下能构造 engine 不抛异常(用 mock provider)。
+- 环境变量覆盖测试:`EDA_STUDIO_SESSION_DIR=/tmp/foo` → `_session_base_dir() == "/tmp/foo"`。
 
 ### runtime 侧测试(上游 issue 范围)
 
