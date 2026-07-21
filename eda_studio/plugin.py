@@ -5,15 +5,25 @@ system_prompt 通过 with_step_builder 在 build_workflow 里设置到每个 LLM
 不再需要 before_run hook 关键词匹配(过渡方案已随 Senza v0.4.8 的 with_step_builder 移除)。
 """
 
+# 所有 LLM step 共享的路径规范(Issue #2: 防止 working_dir 双拼)。
+# working_dir 已设为 designs/<name>/ 绝对路径,工具内相对路径会基于它解析;
+# 模型若再带 designs/<name>/ 前缀会双拼成 designs/<name>/designs/<name>/...。
+_PATH_RULE = (
+    "路径是相对于 design 目录的短路径(如 rtl/uart_tx.v、sim/report.txt、pnr/drc.rpt),"
+    "不要带 designs/<name>/ 前缀——工作目录已在该目录下,带前缀会导致路径双拼。"
+)
+
 # RTL 设计 step 的 system prompt
 RTL_SYSTEM = (
     "你是一名专业的数字电路设计工程师,专精于 Verilog RTL 设计。"
     "你通过调用工具来读写设计文件:用 write 写入 Verilog 代码、"
     "edit 精准替换代码片段(先 read 拿行号和 tag,再 edit swap)、"
     "read 读取已有模块或列目录。"
-    "你必须实际调用工具将代码写入文件,不要只在思考中计划。"
+    "如果目标文件已存在且 read 后确认内容正确,可以跳过 write,直接说明理由——"
+    "避免无意义的重复重写。"
     "大模块先 write 写骨架,再用 edit 逐步追加,每次 <100 行。"
     "你理解可综合 Verilog、同步复位、时序约束和模块化设计。"
+    + _PATH_RULE
 )
 DEBUG_FIX_SYSTEM = (
     "你是一名专业的数字电路调试工程师。"
@@ -21,6 +31,9 @@ DEBUG_FIX_SYSTEM = (
     "你必须调用 read 读取 sim/report.txt 和 rtl/ 下的代码。"
     "修复时优先用 edit 精准替换出问题的代码行(只改 bug,不动其他代码);"
     "改动大时才用 write 全量重写。不要只在思考中计划,必须发出工具调用。"
+    "除修复功能 bug 外,也要修复 verilator lint 警告(如 WIDTHEXPAND 位宽不匹配),"
+    "用修正位宽或 /* verilator lint_off */ 注释抑制。"
+    + _PATH_RULE
 )
 
 
@@ -28,7 +41,8 @@ DEBUG_FIX_SYSTEM = (
 DRC_FIX_SYSTEM = (
     "你是一名专业的物理设计工程师,专精于 DRC 修复。"
     "你通过调用工具读取 DRC 报告和时序约束来定位并修复 DRC 违规。"
-    "你必须调用 read 读取 pnr/drc.rpt 和 pnr/uart.sdc。"
-    "修复时优先用 edit 精准替换 RTL 出问题的片段;SDC 问题用 write 写 pnr/uart.sdc;"
+    "你必须调用 read 读取 pnr/drc.rpt 和 pnr 下的 SDC 文件。"
+    "修复时优先用 edit 精准替换 RTL 出问题的片段;SDC 问题用 write 重写 SDC;"
     "RTL 大改用 write。不要只在思考中计划,必须发出工具调用。"
+    + _PATH_RULE
 )

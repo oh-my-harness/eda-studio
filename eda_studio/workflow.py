@@ -31,13 +31,18 @@ from .executors import (
 )
 
 
-def _session_base_dir() -> str:
-    """session 根目录。默认 'sessions'(仓库根),可通过环境变量覆盖。
+def _session_base_dir(design_name: str = "") -> str:
+    """session 根目录。默认 'sessions/<design_name>',可通过环境变量覆盖。
 
+    按 design 名分目录,避免不同 design 的 session 混在一起。
     空字符串视为未设,回退到默认值。
     """
-    val = os.environ.get("EDA_STUDIO_SESSION_DIR")
-    return val if val else "sessions"
+    base = os.environ.get("EDA_STUDIO_SESSION_DIR")
+    if not base:
+        base = "sessions"
+    if design_name:
+        return f"{base}/{design_name}"
+    return base
 
 
 def build_providers(config: AppConfig):
@@ -121,7 +126,7 @@ def build_workflow(config: AppConfig, design_name: str) -> WorkflowEngine:
     requirement = load_requirement(design_name)
     from .design_config import load_design_config
     dcfg = load_design_config(design_dir)
-    prompts = build_prompts(requirement, dcfg.modules)
+    prompts = build_prompts(requirement, dcfg.modules, top_module=dcfg.top_module)
     provider, pricing = build_providers(config)
 
     # 内置 FsToolsPlugin 提供 read/write/edit/bash 四件套,替代本地文件工具。
@@ -186,7 +191,7 @@ def build_workflow(config: AppConfig, design_name: str) -> WorkflowEngine:
     env = create_os_env(working_dir=str(design_dir))
     engine = WorkflowEngine(
         workflow_dict, provider, config.model, judge, env=env,
-        session_base_dir=_session_base_dir(),
+        session_base_dir=_session_base_dir(design_name),
     )
 
     # builder 级配置:task_store / max_tokens / thinking_level / max_retries。

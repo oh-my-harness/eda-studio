@@ -137,6 +137,16 @@ def _run_with_events(engine, design_name: str) -> None:
         raise error_box[0]
 
 
+def _persist_task_id(design_name: str, task_id: str) -> None:
+    """Issue #1: 将 task_id 写入 designs/<name>/.taskstore/task_id。
+
+    Senza 的 JsonlTaskStore 不写这个文件;cmd_run 在 engine 构建后、
+    run 前写入,使 restore/status/_print_run_summary 能立即工作。
+    """
+    store_dir = Path(f"designs/{design_name}/.taskstore")
+    store_dir.mkdir(parents=True, exist_ok=True)
+    (store_dir / "task_id").write_text(task_id)
+
 def _print_run_summary(design_name: str) -> None:
     """workflow 结束后打印每个 step 的状态表。
 
@@ -194,7 +204,10 @@ def cmd_run(design_name: str, config_path: str):
     )
     config = load_config(config_path)
     engine = build_workflow(config, design_name)
-    print(f"启动 {design_name} 设计流程...")
+    # Issue #1: engine 构建时即生成 task_id,在 run 前持久化,
+    # 确保 restore/status 能立即工作(即使 run 中途崩溃)。
+    _persist_task_id(design_name, engine.task_id())
+    print(f"启动 {design_name} 设计流程 (task_id={engine.task_id()})...")
     _run_with_events(engine, design_name)
     print(f"\n流程结束,state={engine.state()}")
     cost = engine.total_cost().get("total_cost", 0.0)
@@ -227,7 +240,7 @@ def cmd_restore(design_name: str, config_path: str):
         model=config.model,
         judge=make_judge_fn(config, rtl_ids=dcfg.rtl_step_ids),
         env=env,
-        session_base_dir=_session_base_dir(),
+        session_base_dir=_session_base_dir(design_name),
     )
     engine = _re_register(engine, config, design_name, dcfg.rtl_step_ids)
     print(f"恢复到步骤: {engine.current_step()}")

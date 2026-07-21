@@ -98,6 +98,20 @@ def test_session_base_dir_empty_env_falls_back(monkeypatch):
     from eda_studio.workflow import _session_base_dir
     assert _session_base_dir() == "sessions"
 
+def test_session_base_dir_design_scoped(monkeypatch):
+    """传 design_name 时返回 sessions/<design_name>,按 design 分目录。"""
+    monkeypatch.delenv("EDA_STUDIO_SESSION_DIR", raising=False)
+    from eda_studio.workflow import _session_base_dir
+    assert _session_base_dir("uart") == "sessions/uart"
+    assert _session_base_dir("i2c") == "sessions/i2c"
+
+
+def test_session_base_dir_env_override_with_design(monkeypatch):
+    """环境变量 + design_name 同时存在时,返回 <env>/<design_name>。"""
+    monkeypatch.setenv("EDA_STUDIO_SESSION_DIR", "/tmp/foo")
+    from eda_studio.workflow import _session_base_dir
+    assert _session_base_dir("uart") == "/tmp/foo/uart"
+
 
 def test_build_workflow_with_custom_session_dir(tmp_path, monkeypatch):
     """环境变量设自定义 session 根目录时,build_workflow 仍能正常构造。"""

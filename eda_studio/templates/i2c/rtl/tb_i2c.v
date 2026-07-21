@@ -78,7 +78,13 @@ module tb_i2c;
         wait(done);
         #100;
 
-        $display("TEST PASSED");
+        // 读回校验:slave model 简陋,data_out 可能不确定,
+        // 但至少不应为 x/z。若为 x 说明总线无响应。
+        if (data_out === 8'hxx || data_out === 8'hzz) begin
+            $display("TEST FAILED: data_out is x/z (no slave response)");
+        end else begin
+            $display("TEST PASSED");
+        end
         $finish;
     end
 

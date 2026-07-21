@@ -128,5 +128,14 @@ def test_cmd_restore_passes_session_base_dir(tmp_path, monkeypatch):
             assert MockEngine.restore.called, "WorkflowEngine.restore 未被调用"
             _, kwargs = MockEngine.restore.call_args
             assert "session_base_dir" in kwargs, "session_base_dir 未传"
-            assert kwargs["session_base_dir"] == str(tmp_path / "rsessions"), \
-                f"期望 {tmp_path / 'rsessions'},实际 {kwargs.get('session_base_dir')}"
+            assert kwargs["session_base_dir"] == str(tmp_path / "rsessions" / "uart"), \
+                f"期望 {tmp_path / 'rsessions' / 'uart'},实际 {kwargs.get('session_base_dir')}"
+
+def test_persist_task_id_writes_file(tmp_path, monkeypatch):
+    """Issue #1: _persist_task_id 写入 designs/<name>/.taskstore/task_id。"""
+    monkeypatch.chdir(tmp_path)
+    from eda_studio.cli import _persist_task_id
+    _persist_task_id("uart", "task-abc-123")
+    task_id_file = tmp_path / "designs" / "uart" / ".taskstore" / "task_id"
+    assert task_id_file.is_file(), f"task_id 文件未创建: {task_id_file}"
+    assert task_id_file.read_text() == "task-abc-123"

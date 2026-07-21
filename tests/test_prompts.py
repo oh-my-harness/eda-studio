@@ -47,3 +47,22 @@ def test_load_requirement_reads_file(tmp_path, monkeypatch):
     (tmp_path / "designs" / "uart").mkdir(parents=True)
     (tmp_path / "designs" / "uart" / "requirement.md").write_text("# UART\n波特率 115200")
     assert "115200" in load_requirement("uart")
+
+def test_build_prompts_injects_top_module_into_drc_fix():
+    """DRC_FIX_PROMPT 的 {top} 占位符被 top_module 替换。"""
+    modules = _make_modules()
+    prompts = build_prompts("req", modules, top_module="uart")
+    assert "pnr/uart.sdc" in prompts["drc_fix"]
+    assert "{top}" not in prompts["drc_fix"]
+
+
+def test_build_prompts_drc_fix_without_top_module():
+    """不传 top_module 时 DRC_FIX_PROMPT 保留 {top} 占位符(向后兼容)。"""
+    modules = _make_modules()
+    prompts = build_prompts("req", modules)
+    assert "{top}" in prompts["drc_fix"]
+
+
+def test_rtl_module_prompt_allows_skip_existing():
+    """RTL prompt 允许跳过已正确的文件(避免重复重写)。"""
+    assert "跳过 write" in RTL_MODULE_PROMPT or "跳过" in RTL_MODULE_PROMPT
