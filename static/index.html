@@ -25,6 +25,7 @@
         .topbar-divider { width: 1px; height: 24px; background: #0f3460; }
         #current-step-display { display: flex; align-items: center; gap: 6px; }
         #cost-display { font-family: monospace; color: #0f3460; background: #e94560; padding: 2px 8px; border-radius: 4px; color: #fff; }
+        #token-display { font-family: monospace; font-size: 12px; color: #aaa; background: #1a1a2e; padding: 2px 8px; border-radius: 4px; }
         #status-badge { display: flex; align-items: center; gap: 6px; font-size: 13px; }
         .badge-dot { width: 8px; height: 8px; border-radius: 50%; background: #555; }
         #main { display: flex; height: calc(100vh - 53px); }
@@ -94,6 +95,7 @@
         </div>
         <div class="topbar-divider"></div>
         <span id="cost-display">$0.000</span>
+        <span id="token-display"></span>
         <div id="status-badge"><span class="badge-dot"></span><span id="status-text">Idle</span></div>
     </div>
     <div id="main">
@@ -115,6 +117,7 @@
         const latestCardId = {};
         let currentStepId = null;
         let totalCost = 0;
+        let totalTokens = { input: 0, output: 0, cache_read: 0, cache_write: 0, reasoning: 0 };
         let viewStepId = null;  // center-col 当前显示的 step
         const stepStore = {};   // sid → { round, lines: [{text,cls}], output, cost, finished, success }
 
@@ -207,6 +210,24 @@
 
         function updateCostDisplay() {
             document.getElementById('cost-display').textContent = '$' + totalCost.toFixed(4);
+            const parts = [];
+            if (totalTokens.input) parts.push(`in: ${totalTokens.input.toLocaleString()}`);
+            if (totalTokens.output) parts.push(`out: ${totalTokens.output.toLocaleString()}`);
+            if (totalTokens.cache_read) parts.push(`cache_r: ${totalTokens.cache_read.toLocaleString()}`);
+            if (totalTokens.cache_write) parts.push(`cache_w: ${totalTokens.cache_write.toLocaleString()}`);
+            document.getElementById('token-display').textContent = parts.join('  ');
+        }
+
+        function formatTokenMeta(cost) {
+            if (!cost) return '';
+            const parts = [];
+            if (cost.total_input_tokens > 0) parts.push(`in: ${cost.total_input_tokens.toLocaleString()}`);
+            if (cost.total_output_tokens > 0) parts.push(`out: ${cost.total_output_tokens.toLocaleString()}`);
+            if (cost.total_cache_read_tokens > 0) parts.push(`cache_r: ${cost.total_cache_read_tokens.toLocaleString()}`);
+            if (cost.total_cache_write_tokens > 0) parts.push(`cache_w: ${cost.total_cache_write_tokens.toLocaleString()}`);
+            if (cost.total_reasoning_tokens > 0) parts.push(`reasoning: ${cost.total_reasoning_tokens.toLocaleString()}`);
+            if (cost.total_cost > 0) parts.push(`$${cost.total_cost.toFixed(4)}`);
+            return parts.join('  ');
         }
 
         function submitTask() {
@@ -224,6 +245,7 @@
                 } else if (resp.ok) {
                     document.getElementById('events').innerHTML = '';
                     totalCost = 0;
+                    totalTokens = { input: 0, output: 0, cache_read: 0, cache_write: 0, reasoning: 0 };
                     updateCostDisplay();
                     stepRound = {};
                     // 立即连 WS(不阻塞),异步加载 workflow steps 后再 resetFlowchart
@@ -288,10 +310,16 @@
                 const structured = event.structured;
                 const success = structured ? structured.success : true;
                 const cost = event.cost;
-                if (cost && cost.total_cost) totalCost += cost.total_cost;
+                if (cost) {
+                    if (cost.total_cost) totalCost += cost.total_cost;
+                    totalTokens.input += cost.total_input_tokens || 0;
+                    totalTokens.output += cost.total_output_tokens || 0;
+                    totalTokens.cache_read += cost.total_cache_read_tokens || 0;
+                    totalTokens.cache_write += cost.total_cache_write_tokens || 0;
+                    totalTokens.reasoning += cost.total_reasoning_tokens || 0;
+                }
                 updateCostDisplay();
-                let meta = '';
-                if (cost && cost.input_tokens > 0) meta = `${cost.input_tokens}↓ ${cost.output_tokens}↑`;
+                let meta = formatTokenMeta(cost);
                 const icon = success ? '✔' : '✗';
                 const eventClass = success ? 'event-step_finished' : 'event-failed';
                 li.innerHTML = `<span class="event-icon">${icon}</span><div class="event-body"><span class="event-text">${cfg.name} ${success ? '完成' : '失败'}</span>${meta ? `<div class="event-meta">${meta}</div>` : ''}</div><span class="event-ts">${ts}</span>`;
@@ -418,8 +446,8 @@
                 }
             }
             // cost
-            let meta = '';
-            if (s.cost && s.cost.input_tokens > 0) meta = `<div class="step-meta">${s.cost.input_tokens}↓ ${s.cost.output_tokens}↑ $${(s.cost.total_cost||0).toFixed(4)}</div>`;
+            const meta = formatTokenMeta(s.cost);
+            const metaHtml = meta ? `<div class="step-meta">${meta}</div>` : '';
             const spinner = s.finished ? '' : '<span class="spinner"></span>';
             center.innerHTML = `
                 <div class="step-card">
@@ -430,7 +458,7 @@
                         ${spinner}
                     </div>
                     <div class="step-output">${linesHtml}${extra}</div>
-                    ${meta}
+                    ${metaHtml}
                 </div>`;
         }
 
@@ -450,6 +478,9 @@
                 document.getElementById('submit-btn').disabled = true;
                 connectWS();
             }
+            if (s.total_cost != null) totalCost = s.total_cost;
+            if (s.total_tokens) totalTokens = s.total_tokens;
+            updateCostDisplay();
         });
     </script>
 </body>
