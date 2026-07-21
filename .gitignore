@@ -11,4 +11,4 @@ designs/
 .venv/
 sessions
 .worktrees/
-.env.worktrees/
+.env
