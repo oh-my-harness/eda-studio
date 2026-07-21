@@ -10,4 +10,5 @@ config.yaml
 designs/
 .venv/
 sessions
+.worktrees/
 .env.worktrees/
