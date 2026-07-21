@@ -36,3 +36,72 @@ def test_build_workflow_sets_context_variables(tmp_path, monkeypatch):
     assert engine.get_context_variable("design_dir") == "designs/uart"
     assert engine.get_context_variable("docker_config") is not None
     assert engine.get_context_variable("shell_config") is not None
+
+
+def test_session_base_dir_default(monkeypatch):
+    """未设环境变量时返回默认 'sessions'。"""
+    monkeypatch.delenv("EDA_STUDIO_SESSION_DIR", raising=False)
+    from eda_studio.workflow import _session_base_dir
+    assert _session_base_dir() == "sessions"
+
+
+def test_session_base_dir_env_override(monkeypatch):
+    """环境变量覆盖生效。"""
+    monkeypatch.setenv("EDA_STUDIO_SESSION_DIR", "/tmp/foo")
+    from eda_studio.workflow import _session_base_dir
+    assert _session_base_dir() == "/tmp/foo"
+
+
+def test_session_base_dir_empty_env_falls_back(monkeypatch):
+    """环境变量设为空字符串时回退到默认值(空字符串视为未设)。"""
+    monkeypatch.setenv("EDA_STUDIO_SESSION_DIR", "")
+    from eda_studio.workflow import _session_base_dir
+    assert _session_base_dir() == "sessions"
+
+
+def test_session_base_dir_default(monkeypatch):
+    """未设环境变量时返回默认 'sessions'。"""
+    monkeypatch.delenv("EDA_STUDIO_SESSION_DIR", raising=False)
+    from eda_studio.workflow import _session_base_dir
+    assert _session_base_dir() == "sessions"
+
+
+def test_session_base_dir_env_override(monkeypatch):
+    """环境变量覆盖生效。"""
+    monkeypatch.setenv("EDA_STUDIO_SESSION_DIR", "/tmp/foo")
+    from eda_studio.workflow import _session_base_dir
+    assert _session_base_dir() == "/tmp/foo"
+
+
+def test_session_base_dir_empty_env_falls_back(monkeypatch):
+    """环境变量设为空字符串时回退到默认值(空字符串视为未设)。"""
+    monkeypatch.setenv("EDA_STUDIO_SESSION_DIR", "")
+    from eda_studio.workflow import _session_base_dir
+    assert _session_base_dir() == "sessions"
+
+
+def test_build_workflow_with_pricing_does_not_error(tmp_path, monkeypatch):
+    """build_workflow 挂载 with_pricing 后应正常构造 engine(不报错)。
+
+    真实计价需 LLM 调用,单测只验证挂载成功。with_pricing 通过共享
+    customize_builder 闭包注入,与 with_thinking_level 同链。
+    """
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "config.yaml").write_text(CFG_YAML)
+    (tmp_path / "designs" / "uart").mkdir(parents=True)
+    config = load_config(str(tmp_path / "config.yaml"))
+    engine = build_workflow(config, "uart")
+    assert engine is not None
+    assert hasattr(engine, "total_cost")
+
+
+def test_build_providers_returns_pricing(tmp_path, monkeypatch):
+    """build_providers 应返回非 None 的 pricing(PricingProvider)。"""
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "config.yaml").write_text(CFG_YAML)
+    (tmp_path / "designs" / "uart").mkdir(parents=True)
+    config = load_config(str(tmp_path / "config.yaml"))
+    from eda_studio.workflow import build_providers
+    provider, pricing = build_providers(config)
+    assert provider is not None
+    assert pricing is not None

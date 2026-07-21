@@ -10,6 +10,7 @@ senza API 偏差(以实际 pyi/runtime 为准):
    judge 返回 "done" 终止)。
 """
 from dataclasses import asdict
+import os
 from pathlib import Path
 from senza import (
     WorkflowEngine, create_os_env, create_executor,
@@ -29,6 +30,15 @@ from .executors import (
     drc_executor, gds_executor, render_executor,
 )
 
+
+
+def _session_base_dir() -> str:
+    """session 根目录。默认 'sessions'(仓库根),可通过环境变量覆盖。
+
+    空字符串视为未设,回退到默认值。
+    """
+    val = os.environ.get("EDA_STUDIO_SESSION_DIR")
+    return val if val else "sessions"
 
 def build_providers(config: AppConfig):
     """从 provider_spec/pricing_spec 创建 senza Provider + PricingProvider。"""
@@ -188,6 +198,7 @@ def build_workflow(config: AppConfig, design_name: str) -> WorkflowEngine:
         .with_max_tokens(16384)  # glm-5.2 thinking 动辄 8000+ tokens,8192 全被吃完;adapter timeout 已修复连接超时
         .with_thinking_level("high")  # 与 omp 一致:reasoning_effort=high
         .with_max_retries(config.workflow_config.max_fix_retries)  # judge 返回 "retry" 时的重试上限
+        .with_pricing(pricing)  # 挂载 PricingProvider,所有 LLM step 自动计价(Senza #20)
     )
     # executor / plugin / hooks / context 变量(与 cmd_restore 共用)
     engine = _register_engine(engine, config, design_name, rtl_ids)
