@@ -94,7 +94,7 @@
             <span id="current-step-name">Idle</span>
         </div>
         <div class="topbar-divider"></div>
-        <span id="cost-display">$0.000</span>
+        <span id="cost-display">$0.0000</span>
         <span id="token-display"></span>
         <div id="status-badge"><span class="badge-dot"></span><span id="status-text">Idle</span></div>
     </div>
@@ -319,7 +319,7 @@
                     totalTokens.reasoning += cost.total_reasoning_tokens || 0;
                 }
                 updateCostDisplay();
-                let meta = formatTokenMeta(cost);
+                const meta = formatTokenMeta(cost);
                 const icon = success ? '✔' : '✗';
                 const eventClass = success ? 'event-step_finished' : 'event-failed';
                 li.innerHTML = `<span class="event-icon">${icon}</span><div class="event-body"><span class="event-text">${cfg.name} ${success ? '完成' : '失败'}</span>${meta ? `<div class="event-meta">${meta}</div>` : ''}</div><span class="event-ts">${ts}</span>`;
