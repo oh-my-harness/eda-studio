@@ -92,8 +92,10 @@ def make_empty_response_nudge_hooks(max_auto_continue: int = 3, max_nudge: int =
     should_stop 逻辑:
     1. MaxTokens 截断 → 返回 False(继续),让模型从断点续输。
        续输次数上限 max_auto_continue,超限则停止(防失控)。
-    2. EndTurn 且无 tool_use → 返回 False(继续) + 标记 need_nudge。
-       注入 nudge 提示必须调工具。最多 nudge max_nudge 次,超限停止(防死循环)。
+    2. EndTurn 且无 tool_use 且 turn_index==0 → nudge(模型第一个 turn
+       就不调工具,可能是在空谈)。最多 nudge max_nudge 次。
+       turn_index>0 时 EndTurn 无 tool_use 是正常结束——模型已在
+       之前的 turn 调过工具,现在输出总结,应允许停止。
     3. 已调工具 → 正常停止。
 
     transform_context: 检测 need_nudge 标记 → 往 messages 追加 nudge user 消息。
@@ -136,15 +138,18 @@ def make_empty_response_nudge_hooks(max_auto_continue: int = 3, max_nudge: int =
         if _has_tool_use(content):
             state["need_nudge"] = False
             return True
-
-        # EndTurn 无 tool_use → nudge
-        if nudge_count < max_nudge:
+        # EndTurn 无 tool_use:
+        # - turn_index==0: 模型第一个 turn 就不调工具 → nudge
+        # - turn_index>0: 模型已在之前 turn 调过工具,EndTurn 是正常结束
+        turn_index = ctx.get("turn_index", 0)
+        if turn_index == 0 and nudge_count < max_nudge:
             nudge_count += 1
-            logger.info(f"空响应(无 tool_use),注入 nudge ({nudge_count}/{max_nudge})")
+            logger.info(f"空响应(turn 0,无 tool_use),注入 nudge ({nudge_count}/{max_nudge})")
             state["need_nudge"] = True
             return False
         else:
-            logger.warning(f"nudge 次数耗尽({max_nudge}),停止")
+            if turn_index == 0:
+                logger.warning(f"nudge 次数耗尽({max_nudge}),停止")
             state["need_nudge"] = False
             return True
 

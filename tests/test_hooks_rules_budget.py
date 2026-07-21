@@ -48,15 +48,10 @@ def test_nudge_turn0_has_tool_use_returns_true():
            "last_assistant": {"content": [{"type": "tool_use", "id": "1", "name": "x"}]}}
     assert should_stop(ctx) is True
 
-def test_nudge_turn_gt0_empty_nudges_again():
-    # turn > 0 空响应(无 tool_use) → 继续 nudge(最多 max_nudge 次)
+def test_nudge_turn_gt0_empty_stops():
+    # turn > 0 空响应(无 tool_use) → 正常停止(模型已在之前 turn 调过工具)
     should_stop, _, _ = make_empty_response_nudge_hooks(max_nudge=3)
     ctx = {"turn_index": 1, "stop_reason": "end_turn", "last_assistant": {"content": []}}
-    # 前 3 次返回 False(nudge)
-    assert should_stop(ctx) is False
-    assert should_stop(ctx) is False
-    assert should_stop(ctx) is False
-    # 第 4 次耗尽,返回 True(停止)
     assert should_stop(ctx) is True
 
 def test_nudge_max_tokens_auto_continue():
