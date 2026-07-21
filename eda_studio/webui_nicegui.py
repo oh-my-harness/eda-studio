@@ -561,7 +561,7 @@ def create_app(
             cs["step_store"] = {}; cs["total_cost"] = 0.0
             cs["total_tokens"] = {"input": 0, "output": 0, "cache_read": 0, "cache_write": 0, "reasoning": 0}
             cs["banner_shown"] = False
-            events_container.set_content('<ul id="events" style="list-style:none;padding:0;margin:0;"></ul>')
+            cs["_finished_hook_done"] = False
             update_cost_display()
             # 加载 workflow steps(HTTP)
             try:
@@ -588,6 +588,32 @@ def create_app(
         async def pump_events():
             iterator = state.event_iterator
             if iterator is None:
+                # iterator 被清意味着 workflow 结束(engine.run() 返回,
+                # _run_in_background 的 finally 调了 clear_active_task)。
+                # Senza 不发 succeeded/aborted 事件,这里做收尾。
+                if not cs.get("_finished_hook_done"):
+                    cs["_finished_hook_done"] = True
+                    timer.deactivate()
+                    submit_btn.enable()
+                    # 查最终 status 更新状态徽章
+                    try:
+                        s = await _api_get(port, "/api/status")
+                        st = s.get("state", "")
+                        if st == "succeeded":
+                            set_status_badge("done", "Done")
+                        elif st == "failed":
+                            set_status_badge("failed", "Failed")
+                        elif st == "cancelled":
+                            set_status_badge("cancelled", "Cancelled")
+                        else:
+                            set_status_badge("done", st.capitalize())
+                        if s.get("total_cost") is not None:
+                            cs["total_cost"] = s["total_cost"]
+                        if s.get("total_tokens"):
+                            cs["total_tokens"] = s["total_tokens"]
+                        update_cost_display()
+                    except Exception:
+                        pass
                 return
             loop = asyncio.get_event_loop()
             for _ in range(20):
