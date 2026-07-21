@@ -37,13 +37,23 @@ class AppState:
                 "current_step": None,
                 "task_id": None,
                 "total_cost": None,
+                "total_tokens": None,
                 "step_history": [],
                 "design": self.design_name,
             }
         try:
-            cost = engine.total_cost().get("total_cost", 0.0)
+            cost_aggregate = engine.total_cost()
+            total_cost = cost_aggregate.get("total_cost", 0.0)
+            total_tokens = {
+                "input": cost_aggregate.get("total_input_tokens", 0),
+                "output": cost_aggregate.get("total_output_tokens", 0),
+                "cache_read": cost_aggregate.get("total_cache_read_tokens", 0),
+                "cache_write": cost_aggregate.get("total_cache_write_tokens", 0),
+                "reasoning": cost_aggregate.get("total_reasoning_tokens", 0),
+            }
         except Exception:
-            cost = 0.0
+            total_cost = 0.0
+            total_tokens = None
         try:
             history = engine.step_history()
         except Exception:
@@ -53,7 +63,8 @@ class AppState:
             "state": engine.state(),
             "current_step": engine.current_step(),
             "task_id": self.task_id,
-            "total_cost": cost,
+            "total_cost": total_cost,
+            "total_tokens": total_tokens,
             "step_history": history,
             "design": self.design_name,
         }
