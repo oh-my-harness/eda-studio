@@ -289,6 +289,9 @@ def _workflow_runner(state, design_name: str) -> None:
 
     state.engine = engine
     state.task_id = engine.task_id()
+    # Issue #1: serve 路径也要持久化 task_id(与 cmd_run 一致),
+    # 否则 Web UI 跑完后 restore/status 仍找不到 taskstore。
+    _persist_task_id(design_name, state.task_id)
     state.design_name = design_name
     # subscribe() 必须在 run() 之前调用,这样 WS 能拿到所有事件
     state.event_iterator = engine.subscribe(timeout_ms=2000)
