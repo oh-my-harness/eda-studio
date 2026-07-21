@@ -10,6 +10,7 @@ senza API 偏差(以实际 pyi/runtime 为准):
    judge 返回 "done" 终止)。
 """
 from dataclasses import asdict
+import os
 from pathlib import Path
 from senza import (
     WorkflowEngine, create_os_env, create_executor,
@@ -28,6 +29,15 @@ from .executors import (
     simulate_executor, synthesize_executor, pnr_executor,
     drc_executor, gds_executor, render_executor,
 )
+
+
+def _session_base_dir() -> str:
+    """session 根目录。默认 'sessions'(仓库根),可通过环境变量覆盖。
+
+    空字符串视为未设,回退到默认值。
+    """
+    val = os.environ.get("EDA_STUDIO_SESSION_DIR")
+    return val if val else "sessions"
 
 
 def build_providers(config: AppConfig):
@@ -176,6 +186,7 @@ def build_workflow(config: AppConfig, design_name: str) -> WorkflowEngine:
     env = create_os_env(working_dir=str(design_dir))
     engine = WorkflowEngine(
         workflow_dict, provider, config.model, judge, env=env,
+        session_base_dir=_session_base_dir(),
     )
 
     # builder 级配置:task_store / max_tokens / thinking_level / max_retries。

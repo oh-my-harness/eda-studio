@@ -76,3 +76,36 @@ def test_build_providers_returns_pricing():
     provider, pricing = build_providers(config)
     assert provider is not None
     assert pricing is not None
+
+
+def test_session_base_dir_default(monkeypatch):
+    """未设环境变量时返回默认 'sessions'。"""
+    monkeypatch.delenv("EDA_STUDIO_SESSION_DIR", raising=False)
+    from eda_studio.workflow import _session_base_dir
+    assert _session_base_dir() == "sessions"
+
+
+def test_session_base_dir_env_override(monkeypatch):
+    """环境变量覆盖生效。"""
+    monkeypatch.setenv("EDA_STUDIO_SESSION_DIR", "/tmp/foo")
+    from eda_studio.workflow import _session_base_dir
+    assert _session_base_dir() == "/tmp/foo"
+
+
+def test_session_base_dir_empty_env_falls_back(monkeypatch):
+    """环境变量设为空字符串时回退到默认值(空字符串视为未设)。"""
+    monkeypatch.setenv("EDA_STUDIO_SESSION_DIR", "")
+    from eda_studio.workflow import _session_base_dir
+    assert _session_base_dir() == "sessions"
+
+
+def test_build_workflow_with_custom_session_dir(tmp_path, monkeypatch):
+    """环境变量设自定义 session 根目录时,build_workflow 仍能正常构造。"""
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("EDA_STUDIO_SESSION_DIR", str(tmp_path / "custom_sessions"))
+    (tmp_path / "config.yaml").write_text(CFG_YAML)
+    (tmp_path / "designs" / "uart").mkdir(parents=True)
+    config = load_config(str(tmp_path / "config.yaml"))
+    engine = build_workflow(config, "uart")
+    assert engine is not None
+    assert hasattr(engine, "run")

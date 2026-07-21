@@ -40,7 +40,7 @@ from senza import (
 )
 
 from .config import load_config
-from .workflow import build_workflow, build_providers
+from .workflow import build_workflow, build_providers, _session_base_dir
 from .judge import make_judge_fn
 
 logger = logging.getLogger(__name__)
@@ -227,6 +227,7 @@ def cmd_restore(design_name: str, config_path: str):
         model=config.model,
         judge=create_judge(make_judge_fn(config, rtl_ids=dcfg.rtl_step_ids)),
         env=env,
+        session_base_dir=_session_base_dir(),
     )
     engine = _re_register(engine, config, design_name, dcfg.rtl_step_ids)
     print(f"恢复到步骤: {engine.current_step()}")
