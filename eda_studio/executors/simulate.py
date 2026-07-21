@@ -2,6 +2,7 @@
 import subprocess
 from pathlib import Path
 from ..shell_safety import run_shell, to_container_cwd, to_container_path, ShellSafetyError
+from .base import ExecutorContext
 
 
 def _parse_verilator_output(stderr: str, stdout: str) -> str:
@@ -16,14 +17,11 @@ def simulate_executor(ctx: dict) -> dict:
     2. 运行 sim_out:它是 verilator 的编译产物(不是 shell 工具),不应进
        run_shell 的 allowed_commands 白名单。直接构造 docker exec 在容器内跑。
     """
-    design_dir = Path(ctx["context"]["design_dir"])
-    docker_cfg = ctx["context"]["docker_config"]
-    shell_cfg = ctx["context"]["shell_config"]
-
-    from ..shell_safety import _as_docker_config
-    from ..design_config import load_design_config
-    docker_cfg = _as_docker_config(docker_cfg)
-    dcfg = load_design_config(design_dir)
+    ectx = ExecutorContext.from_ctx(ctx)
+    design_dir = ectx.design_dir
+    docker_cfg = ectx.docker_config
+    shell_cfg = ectx.shell_config
+    dcfg = ectx.design
 
     tb_filename = f"{dcfg.tb_module}.v"
     rtl_files = [f for f in (design_dir / "rtl").glob("*.v") if f.name != tb_filename]

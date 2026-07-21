@@ -22,7 +22,7 @@ Executor 是 Python 回调,签名为 `fn(ctx: dict) -> dict`。
 1. 在 `eda_studio/executors/` 新建文件,实现 executor 函数
 2. 返回 `{"output": str, "structured": {"success": bool, ...}}`
 3. 在 `eda_studio/executors/__init__.py` 导出
-4. 在 `eda_studio/workflow.py` 的 `build_workflow` 中用 `.with_executor(step_id, create_executor(fn))` 注册
+4. 在 `eda_studio/workflow.py` 的 `_register_engine` 中用 `.with_executor(step_id, create_executor(fn))` 注册(build_workflow 和 cmd_restore 共用)
 5. 在 `eda_studio/judge.py` 加该 step 的路由逻辑
 6. 在 `eda_studio/workflow.py` 的 `workflow_dict.edges` 加路由边
 

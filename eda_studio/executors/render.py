@@ -9,7 +9,8 @@ gdstk+matplotlib 不依赖 X11,在容器内直接出图。
 import subprocess
 import textwrap
 from pathlib import Path
-from ..shell_safety import run_shell, to_container_path, ShellSafetyError, _as_docker_config
+from ..shell_safety import run_shell, to_container_path, ShellSafetyError
+from .base import ExecutorContext
 
 
 # sky130 常用 layer/datatype → 颜色映射(近似 KLayout sky130A.lyp)。
@@ -33,11 +34,11 @@ _LAYER_COLORS = {
 
 
 def render_executor(ctx: dict) -> dict:
-    design_dir = Path(ctx["context"]["design_dir"])
-    docker_cfg = _as_docker_config(ctx["context"]["docker_config"])
-    shell_cfg = ctx["context"]["shell_config"]
-    from ..design_config import load_design_config
-    dcfg = load_design_config(design_dir)
+    ectx = ExecutorContext.from_ctx(ctx)
+    design_dir = ectx.design_dir
+    docker_cfg = ectx.docker_config
+    shell_cfg = ectx.shell_config
+    dcfg = ectx.design
     gds_file = design_dir / "gds" / f"{dcfg.top_module}.gds"
     gds_dir = design_dir / "gds"
     gds_dir.mkdir(parents=True, exist_ok=True)

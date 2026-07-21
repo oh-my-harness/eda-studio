@@ -1,13 +1,9 @@
-"""SystemPromptPlugin — 为 LLM step 设置 system prompt。
+"""LLM step 的 system prompt 常量。
 
 告诉模型它的角色和必须调用工具,避免模型只 thinking 不调工具。
+system_prompt 通过 with_step_builder 在 build_workflow 里设置到每个 LLM step,
+不再需要 before_run hook 关键词匹配(过渡方案已随 Senza v0.4.8 的 with_step_builder 移除)。
 """
-import logging
-
-logger = logging.getLogger(__name__)
-
-from senza import create_before_run_hook, create_plugin
-
 
 # RTL 设计 step 的 system prompt
 RTL_SYSTEM = (
@@ -27,6 +23,7 @@ DEBUG_FIX_SYSTEM = (
     "改动大时才用 write 全量重写。不要只在思考中计划,必须发出工具调用。"
 )
 
+
 # DRC 修复 step 的 system prompt
 DRC_FIX_SYSTEM = (
     "你是一名专业的物理设计工程师,专精于 DRC 修复。"
@@ -35,14 +32,3 @@ DRC_FIX_SYSTEM = (
     "修复时优先用 edit 精准替换 RTL 出问题的片段;SDC 问题用 write 写 pnr/uart.sdc;"
     "RTL 大改用 write。不要只在思考中计划,必须发出工具调用。"
 )
-
-def create_system_prompt_plugin(prompt: str):
-    """创建 system-prompt plugin,在每次 run 前设置 system prompt。"""
-    def before_run_cb(ctx: dict):
-        logger.info(f"system_prompt plugin: before_run called, setting prompt ({len(prompt)} chars)")
-        return {
-            "system_prompt": prompt,
-            "additional_messages": [],
-        }
-    hook = create_before_run_hook(before_run_cb)
-    return create_plugin(name="system-prompt", hooks=[hook])

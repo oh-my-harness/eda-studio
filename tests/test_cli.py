@@ -1,6 +1,6 @@
 """CLI 测试:验证 argparse 路由(不真跑 engine,只 mock cmd_run/cmd_restore)。"""
 from unittest.mock import patch
-from eda_studio.__main__ import main
+from eda_studio.cli import main
 
 CFG = (
     "provider: {type: openai, api_key: sk-x, base_url: null}\n"
@@ -16,7 +16,7 @@ def test_cli_run_calls_cmd_run(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     (tmp_path / "config.yaml").write_text(CFG)
     (tmp_path / "designs" / "uart").mkdir(parents=True)
-    with patch("eda_studio.__main__.cmd_run") as mock_run:
+    with patch("eda_studio.cli.cmd_run") as mock_run:
         main(["run", "uart", "--config", "config.yaml"])
     mock_run.assert_called_once()
 
@@ -24,13 +24,13 @@ def test_cli_restore_calls_cmd_restore(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     (tmp_path / "config.yaml").write_text(CFG)
     (tmp_path / "designs" / "uart").mkdir(parents=True)
-    with patch("eda_studio.__main__.cmd_restore") as mock_restore:
+    with patch("eda_studio.cli.cmd_restore") as mock_restore:
         main(["restore", "uart", "--config", "config.yaml"])
     mock_restore.assert_called_once()
 
 def test_cli_serve_calls_cmd_serve(tmp_path, monkeypatch):
     (tmp_path / "config.yaml").write_text(CFG)
     monkeypatch.chdir(tmp_path)
-    with patch("eda_studio.__main__.cmd_serve") as mock_serve:
+    with patch("eda_studio.cli.cmd_serve") as mock_serve:
         main(["serve", "--config", "config.yaml", "--port", "3000"])
     mock_serve.assert_called_once()

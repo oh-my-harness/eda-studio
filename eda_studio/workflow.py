@@ -9,6 +9,7 @@ senza API 偏差(以实际 pyi/runtime 为准):
    因此删除 brief 中的 `{"from":"gds","to":"done"}` 边(gds 之后由
    judge 返回 "done" 终止)。
 """
+from dataclasses import asdict
 from pathlib import Path
 from senza import (
     WorkflowEngine, create_os_env, create_executor,
@@ -16,7 +17,6 @@ from senza import (
     create_pricing_provider, create_fs_tools_plugin,
     create_before_turn_hook, create_after_turn_hook, create_after_tool_call_hook,
     create_after_provider_response_hook,
-    create_before_run_hook,
     create_should_stop_hook, create_shell_executor,
 )
 from .config import AppConfig
@@ -56,7 +56,54 @@ def _wrap_hooks(raw_hooks):
     ]
 
 
+def _register_engine(engine, config: AppConfig, design_name: str, rtl_ids: list):
+    """注册 executor / plugin / hooks / context 变量到 engine。
 
+    build_workflow(新 engine)和 cmd_restore(restore 出的 engine)共用此逻辑。
+    WorkflowEngine.restore 只恢复 workflow 定义与 taskstore 状态,不恢复
+    with_executor/with_step_plugin/with_hooks/set_context_variable 的注册,
+    需在此重新挂载——否则 LLM step 的 allowed_tools 找不到 tool 实现。
+
+    注意:task_store/max_tokens/thinking_level/max_retries 是 builder 级配置,
+    新 engine 在 build_workflow 里单独设置;restore 的 engine 从 taskstore 恢复,
+    不在此重复设置。
+    """
+    fs_plugin = create_fs_tools_plugin()
+    engine = (engine
+        # 5 个 EDA executor + 1 个 shell executor(教学)
+        .with_executor("simulate", create_executor(simulate_executor))
+        .with_executor("synthesize", create_executor(synthesize_executor))
+        .with_executor("pnr", create_executor(pnr_executor))
+        .with_executor("drc", create_executor(drc_executor))
+        .with_executor("gds", create_executor(gds_executor))
+        .with_executor("render", create_executor(render_executor))
+        .with_executor("shell", create_shell_executor(["echo", "python3"]))
+        .with_hooks(_wrap_hooks(make_hooks(config)))
+    )
+    # 每个 LLM step 注册 FsToolsPlugin + per-step system_prompt。
+    # with_step_builder 在共享 builder 设置之后、plugin 之前应用 customize,
+    # 可显式设置 system_prompt(需 Senza v0.4.8 的 with_step_builder)。
+    # with_step_plugin 是 insert(覆盖),一个 step 只能有一个 plugin,
+    # 但与 with_step_builder 不冲突(后者改 builder,前者加 plugin)。
+    step_system_prompts = {"debug_fix": DEBUG_FIX_SYSTEM, "drc_fix": DRC_FIX_SYSTEM}
+    for sid in rtl_ids + ["debug_fix", "drc_fix"]:
+        sp = step_system_prompts.get(sid, RTL_SYSTEM)
+        engine = engine.with_step_builder(sid, lambda b, sp=sp: b.system_prompt(sp))
+        engine = engine.with_step_plugin(sid, fs_plugin)
+
+    # MaxTokens auto-continue:thinking 链被截断时让模型续输 + provider 响应日志。
+    engine = engine.with_hooks([
+        create_should_stop_hook(make_max_tokens_continue_hook()),
+        create_after_provider_response_hook(make_provider_response_logger()),
+    ])
+    # context 变量:design_dir / docker_config / shell_config。
+    # 不把整个 config 放进 context,避免 API key 落盘到 taskstore。
+    # senza 偏差:set_context_variable 要求 JSON 可序列化值,
+    # dataclass 实例(DockerConfig/ShellConfig)无法直接序列化,转 dict。
+    engine.set_context_variable("design_dir", f"designs/{design_name}")
+    engine.set_context_variable("docker_config", asdict(config.docker_config))
+    engine.set_context_variable("shell_config", asdict(config.shell_config))
+    return engine
 
 def build_workflow(config: AppConfig, design_name: str) -> WorkflowEngine:
     """构建 WorkflowEngine:根据 design_config 动态生成 steps + edges。"""
@@ -131,53 +178,18 @@ def build_workflow(config: AppConfig, design_name: str) -> WorkflowEngine:
         workflow_dict, provider, config.model, judge, env=env,
     )
 
+    # builder 级配置:task_store / max_tokens / thinking_level / max_retries。
+    # 必须在 _register_engine(with_step_builder)之前应用——with_step_builder
+    # 在共享 customize_builder 之后应用 customize 闭包。
+    # restore 出的 engine 从 taskstore 恢复这些,不在此设置(见 _register_engine)。
     engine = (
         engine
-        # 5 个 EDA executor + 1 个 shell executor(教学)
-        .with_executor("simulate", create_executor(simulate_executor))
-        .with_executor("synthesize", create_executor(synthesize_executor))
-        .with_executor("pnr", create_executor(pnr_executor))
-        .with_executor("drc", create_executor(drc_executor))
-        .with_executor("gds", create_executor(gds_executor))
-        .with_executor("render", create_executor(render_executor))
-        .with_executor("shell", create_shell_executor(["echo", "python3"]))
-        .with_hooks(_wrap_hooks(make_hooks(config)))
         .with_task_store(f"designs/{design_name}/.taskstore")
         .with_max_tokens(16384)  # glm-5.2 thinking 动辄 8000+ tokens,8192 全被吃完;adapter timeout 已修复连接超时
         .with_thinking_level("high")  # 与 omp 一致:reasoning_effort=high
         .with_max_retries(config.workflow_config.max_fix_retries)  # judge 返回 "retry" 时的重试上限
     )
-    # FsToolsPlugin 通过 with_step_plugin 注册到每个 LLM step。
-    # 注意:with_step_plugin 是 insert(覆盖),一个 step 只能有一个 plugin。
-    # system_prompt 改用 before_run hook(见下方),不占用 with_step_plugin 槽位。
-    for sid in rtl_ids + ["debug_fix", "drc_fix"]:
-        engine = engine.with_step_plugin(sid, fs_plugin)
-
-    # MaxTokens auto-continue:thinking 链被截断时让模型续输
-    # + provider 响应日志 + system_prompt(通过 before_run hook)
-    # system_prompt 用 before_run hook 而非 with_step_plugin(后者是 insert 覆盖)
-    def set_system_prompt_cb(ctx: dict):
-        prompt_text = ctx.get("prompt_text", "")
-        if "DRC" in prompt_text or "drc" in prompt_text:
-            sp = DRC_FIX_SYSTEM
-        elif "仿真" in prompt_text or "sim" in prompt_text.lower():
-            sp = DEBUG_FIX_SYSTEM
-        else:
-            sp = RTL_SYSTEM
-        return {"system_prompt": sp, "additional_messages": []}
-
-    engine = engine.with_hooks([
-        create_should_stop_hook(make_max_tokens_continue_hook()),
-        create_after_provider_response_hook(make_provider_response_logger()),
-        create_before_run_hook(set_system_prompt_cb),
-    ])
-    # context 变量:design_dir / docker_config / shell_config。
-    # 不把整个 config 放进 context,避免 API key 落盘到 taskstore。
-    # senza 偏差:set_context_variable 要求 JSON 可序列化值,
-    # dataclass 实例(DockerConfig/ShellConfig)无法直接序列化,转 dict。
-    from dataclasses import asdict
-    engine.set_context_variable("design_dir", f"designs/{design_name}")
-    engine.set_context_variable("docker_config", asdict(config.docker_config))
-    engine.set_context_variable("shell_config", asdict(config.shell_config))
+    # executor / plugin / hooks / context 变量(与 cmd_restore 共用)
+    engine = _register_engine(engine, config, design_name, rtl_ids)
 
     return engine

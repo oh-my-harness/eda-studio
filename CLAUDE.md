@@ -89,7 +89,7 @@ docker run -d --name eda-tools -v $(pwd)/designs:/work/designs -e PDK=sky130A hp
 
 ### 版本
 
-- **senza-sdk**(版本见 `pyproject.toml`,当前 0.4.6;从 PyPI 安装 `pip install senza-sdk`)
+- **senza-sdk**(版本见 `pyproject.toml`,当前 0.4.8;从 PyPI 安装 `pip install senza-sdk`)
 - import 名：`senza`（包名 `senza-sdk`）
 - abi3 wheel，支持 Python 3.9–3.14+
 
@@ -122,13 +122,13 @@ docker run -d --name eda-tools -v $(pwd)/designs:/work/designs -e PDK=sky130A hp
 
 ### 集成模式
 
-`WorkflowEngine` 编排流程，LLM 步骤（`prompt` + `allowed_tools`）和 executor 步骤混用。工具通过 `.with_tool()` 注册到 engine 级别，LLM 步骤通过 `allowed_tools` 声明可用子集。
+`WorkflowEngine` 编排流程，LLM 步骤（`prompt` + `allowed_tools`）和 executor 步骤混用。工具通过 `with_step_plugin` 注册内置 FsToolsPlugin(read/write/edit/bash)到每个 LLM step,LLM 步骤通过 `allowed_tools` 声明可用子集。system_prompt 通过 `with_step_builder` per-step 设置(需 Senza v0.4.8)。
 
 **关键设计决策**：LLM 步骤用 workflow 原生 LLM step（`prompt` + `allowed_tools`），不用 executor 包装 AgentHarness。原因：
 
 1. WorkflowEngine 原生支持 LLM step 和 executor step 混用，这是 senza 的设计意图
 2. hooks、compaction、context 管理、usage 统计等引擎原生能力自动生效
-3. 工具通过 `.with_tool()` 注册到 engine 级别，通过 `allowed_tools` 控制每步可用子集
+3. 工具通过 FsToolsPlugin(`with_step_plugin`)注册,system_prompt 通过 `with_step_builder` per-step 设置
 4. judge 逻辑统一（LLM step 和 executor step 的 result 都有 `output` 字段）
 
 ### Workflow 节点
@@ -151,7 +151,7 @@ docker run -d --name eda-tools -v $(pwd)/designs:/work/designs -e PDK=sky130A hp
 
 - 仿真失败 → `debug_fix` → 重跑 `simulate`（max_retries=3）
 - DRC 失败 → `drc_fix` → 重跑 `pnr`（max_retries=3）
-- RTL step:模型必须调了工具(write_rtl)才算完成;没调工具 → retry,耗尽 → abort:done
+- RTL step:模型必须调了工具(write/edit)才算完成;没调工具 → retry,耗尽 → abort:done
 - gds 成功 → render;render 后 → abort:done(宽容:GDS 已产出即算 succeeded)
 - 超过重试次数 → `abort:done`
 
@@ -174,7 +174,7 @@ EDA 工具**不作为 LLM tool**(太危险),而是作为 executor 步骤由 work
 
 - `eda_studio/server.py` — 路由：`POST /api/task`、`GET /api/status`、`GET /api/report/{step}`、`GET /api/render.png`、`WS /ws`
 - `eda_studio/state.py` — AppState（engine/event_iterator/task_running）
-- `eda_studio/main.py` — serve 入口 + workflow_runner（后台线程）
+- `eda_studio/cli.py` — serve 入口(合并后)+ workflow_runner(后台线程)
 - `static/index.html` — 三栏：左 workflow 流程图、中 step 输出、右事件时间线
 
 `workflow_runner` 中 `subscribe()` 也必须在 `engine.run()` 之前调用，存到 `state.event_iterator` 供 WS 转发。

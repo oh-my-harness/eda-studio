@@ -5,15 +5,16 @@ magic 用 tcl 脚本文件(不支持 -cmd),需先 read LEF(tech + macro)再 read
 """
 import subprocess
 from pathlib import Path
-from ..shell_safety import run_shell, to_container_path, ShellSafetyError, _as_docker_config
+from ..shell_safety import run_shell, to_container_path, ShellSafetyError
+from .base import ExecutorContext, find_pdk_files
 
 
 def drc_executor(ctx: dict) -> dict:
-    design_dir = Path(ctx["context"]["design_dir"])
-    docker_cfg = _as_docker_config(ctx["context"]["docker_config"])
-    shell_cfg = ctx["context"]["shell_config"]
-    from ..design_config import load_design_config
-    dcfg = load_design_config(design_dir)
+    ectx = ExecutorContext.from_ctx(ctx)
+    design_dir = ectx.design_dir
+    docker_cfg = ectx.docker_config
+    shell_cfg = ectx.shell_config
+    dcfg = ectx.design
     pnr_dir = design_dir / "pnr"
     def_file = pnr_dir / f"{dcfg.top_module}_pnr.def"
     drc_rpt = pnr_dir / "drc.rpt"
@@ -22,17 +23,13 @@ def drc_executor(ctx: dict) -> dict:
         return {"output": f"DEF 文件不存在: {def_file}",
                 "structured": {"success": False}}
 
-    # PDK 路径(同 pnr executor)
-    pdk_glob = "/foss/pdks/ciel/sky130/versions/*/sky130A/libs.ref/sky130_fd_sc_hd"
-    find = subprocess.run(
-        ["docker", "exec", docker_cfg.container, "bash", "-lc",
-         f"ls {pdk_glob}/lef/sky130_fd_sc_hd.lef "
-         f"{pdk_glob}/techlef/sky130_fd_sc_hd__nom.tlef"],
-        capture_output=True, text=True, timeout=30)
-    paths = [p for p in find.stdout.strip().split("\n")
-             if p and not p.startswith("[INFO")]
-    lef_path = next((p for p in paths if p.endswith(".lef")), "")
-    tlef_path = next((p for p in paths if p.endswith(".tlef")), "")
+    # PDK 路径(同 pnr executor,只需 lef + tlef)
+    pdk = find_pdk_files(docker_cfg, [
+        "lef/sky130_fd_sc_hd.lef",
+        "techlef/sky130_fd_sc_hd__nom.tlef",
+    ])
+    lef_path = pdk["lef/sky130_fd_sc_hd.lef"]
+    tlef_path = pdk["techlef/sky130_fd_sc_hd__nom.tlef"]
     if not lef_path or not tlef_path:
         return {"output": f"PDK LEF 未找到: lef={lef_path} tlef={tlef_path}",
                 "structured": {"success": False}}

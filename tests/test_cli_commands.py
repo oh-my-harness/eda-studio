@@ -8,7 +8,7 @@ import pytest
 def test_init_copies_template(tmp_path, monkeypatch):
     """init uart 复制 templates/uart/ 到 designs/uart/。"""
     monkeypatch.chdir(tmp_path)
-    from eda_studio.cli_commands import cmd_init
+    from eda_studio.cli import cmd_init
     rc = cmd_init("uart")
     assert rc == 0
     req = tmp_path / "designs" / "uart" / "requirement.md"
@@ -22,7 +22,7 @@ def test_init_refuses_existing(tmp_path, monkeypatch):
     """designs/uart/ 已存在时 init 报错退出。"""
     monkeypatch.chdir(tmp_path)
     (tmp_path / "designs" / "uart").mkdir(parents=True)
-    from eda_studio.cli_commands import cmd_init
+    from eda_studio.cli import cmd_init
     rc = cmd_init("uart")
     assert rc == 1
 
@@ -30,7 +30,7 @@ def test_init_refuses_existing(tmp_path, monkeypatch):
 def test_init_unknown_template(tmp_path, monkeypatch):
     """未知模板名报错并列出可用模板。"""
     monkeypatch.chdir(tmp_path)
-    from eda_studio.cli_commands import cmd_init
+    from eda_studio.cli import cmd_init
     rc = cmd_init("nonexistent")
     assert rc == 1
 
@@ -38,7 +38,7 @@ def test_init_unknown_template(tmp_path, monkeypatch):
 def test_check_config_missing(tmp_path, monkeypatch):
     """config.yaml 不存在时 check 报错。"""
     monkeypatch.chdir(tmp_path)
-    from eda_studio.cli_commands import cmd_check
+    from eda_studio.cli import cmd_check
     rc = cmd_check("nonexistent.yaml")
     assert rc == 1
 
@@ -69,6 +69,6 @@ def test_check_config_ok(tmp_path, monkeypatch):
         "  workdir: /work/designs\n"
         "  pdk: sky130A\n"
     )
-    from eda_studio.cli_commands import cmd_check
+    from eda_studio.cli import cmd_check
     rc = cmd_check("config.yaml")
     assert rc == 1

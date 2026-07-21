@@ -29,7 +29,7 @@ def test_print_run_summary(tmp_path, monkeypatch, capsys):
          "transition": {"abort": {"reason": "done"}}},
     ])
     monkeypatch.chdir(tmp_path)
-    from eda_studio.__main__ import _print_run_summary
+    from eda_studio.cli import _print_run_summary
     _print_run_summary("uart")
     out = capsys.readouterr().out
     assert "rtl_tx" in out and "✓" in out
@@ -41,7 +41,7 @@ def test_print_run_summary(tmp_path, monkeypatch, capsys):
 def test_print_run_summary_no_taskstore(tmp_path, monkeypatch, capsys):
     """taskstore 不存在时不报错。"""
     monkeypatch.chdir(tmp_path)
-    from eda_studio.__main__ import _print_run_summary
+    from eda_studio.cli import _print_run_summary
     _print_run_summary("uart")
     out = capsys.readouterr().out
     assert "未找到" in out or "taskstore" in out
