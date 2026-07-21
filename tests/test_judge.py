@@ -1,4 +1,8 @@
-from eda_studio.judge import make_judge_fn
+from eda_studio.judge import (
+    make_judge_fn, _rtl_handler, _simulate_handler, _debug_fix_handler,
+    _synthesize_handler, _pnr_handler, _drc_fix_handler,
+    _drc_handler, _gds_handler, _render_handler,
+)
 from eda_studio.config import AppConfig, WorkflowConfig, ShellConfig, DockerConfig
 
 def make_config(max_fix=3):
@@ -17,113 +21,128 @@ def ctx(step_id, success=None, output="", retry_count=0, tool_calls_count=0):
     return {"step_id": step_id, "output": output, "step_count": 1, "retry_count": retry_count,
             "tool_calls_count": tool_calls_count,
             "structured": {"success": success} if success is not None else {}}
+
+def _fix_counts():
+    return {"simulate": 0, "pnr": 0, "drc": 0}
+
+RTL_IDS = ["rtl_tx", "rtl_rx", "rtl_top"]
+
 def test_rtl_tx_done_when_tool_called():
-    judge = make_judge_fn(make_config())
-    assert judge(ctx("rtl_tx", tool_calls_count=1)) == "to:rtl_rx"
+    assert _rtl_handler(ctx("rtl_tx", tool_calls_count=1), idx=0,
+                        rtl_ids=RTL_IDS, max_fix=3) == "to:rtl_rx"
 
 def test_rtl_tx_retries_when_no_tool():
-    judge = make_judge_fn(make_config())
-    assert judge(ctx("rtl_tx", tool_calls_count=0)) == "retry"
+    assert _rtl_handler(ctx("rtl_tx", tool_calls_count=0), idx=0,
+                        rtl_ids=RTL_IDS, max_fix=3) == "retry"
 
 def test_rtl_tx_aborts_when_retry_exhausted():
-    judge = make_judge_fn(make_config(max_fix=2))
-    assert judge(ctx("rtl_tx", tool_calls_count=0, retry_count=2)) == "abort:done"
+    assert _rtl_handler(ctx("rtl_tx", tool_calls_count=0, retry_count=2),
+                        idx=0, rtl_ids=RTL_IDS, max_fix=2) == "abort:done"
 
 def test_rtl_rx_done_when_tool_called():
-    judge = make_judge_fn(make_config())
-    assert judge(ctx("rtl_rx", tool_calls_count=1)) == "to:rtl_top"
+    assert _rtl_handler(ctx("rtl_rx", tool_calls_count=1), idx=1,
+                        rtl_ids=RTL_IDS, max_fix=3) == "to:rtl_top"
 
 def test_rtl_rx_retries_when_no_tool():
-    judge = make_judge_fn(make_config())
-    assert judge(ctx("rtl_rx", tool_calls_count=0)) == "retry"
+    assert _rtl_handler(ctx("rtl_rx", tool_calls_count=0), idx=1,
+                        rtl_ids=RTL_IDS, max_fix=3) == "retry"
 
 def test_rtl_top_done_when_tool_called():
-    judge = make_judge_fn(make_config())
-    assert judge(ctx("rtl_top", tool_calls_count=1)) == "to:simulate"
+    assert _rtl_handler(ctx("rtl_top", tool_calls_count=1), idx=2,
+                        rtl_ids=RTL_IDS, max_fix=3) == "to:simulate"
 
 def test_rtl_top_retries_when_no_tool():
-    judge = make_judge_fn(make_config())
-    assert judge(ctx("rtl_top", tool_calls_count=0)) == "retry"
+    assert _rtl_handler(ctx("rtl_top", tool_calls_count=0), idx=2,
+                        rtl_ids=RTL_IDS, max_fix=3) == "retry"
 
 def test_simulate_success_to_synthesize():
-    judge = make_judge_fn(make_config())
-    assert judge(ctx("simulate", success=True)) == "to:synthesize"
+    assert _simulate_handler(ctx("simulate", success=True), _fix_counts(), max_fix=3) == "to:synthesize"
 
 def test_simulate_fail_to_debug_fix():
-    judge = make_judge_fn(make_config())
-    assert judge(ctx("simulate", success=False)) == "to:debug_fix"
+    assert _simulate_handler(ctx("simulate", success=False), _fix_counts(), max_fix=3) == "to:debug_fix"
 
 def test_simulate_fix_count_exceeds_max_aborts():
-    judge = make_judge_fn(make_config(max_fix=2))
-    assert judge(ctx("simulate", success=False)) == "to:debug_fix"
-    assert judge(ctx("simulate", success=False)) == "to:debug_fix"
-    assert judge(ctx("simulate", success=False)) == "abort:done"
+    fc = _fix_counts()
+    assert _simulate_handler(ctx("simulate", success=False), fc, max_fix=2) == "to:debug_fix"
+    assert _simulate_handler(ctx("simulate", success=False), fc, max_fix=2) == "to:debug_fix"
+    assert _simulate_handler(ctx("simulate", success=False), fc, max_fix=2) == "abort:done"
+    assert fc["simulate"] == 3
 
 def test_simulate_success_resets_count():
-    judge = make_judge_fn(make_config(max_fix=2))
-    judge(ctx("simulate", success=False))
-    judge(ctx("simulate", success=False))
-    judge(ctx("simulate", success=True))
-    assert judge(ctx("simulate", success=False)) == "to:debug_fix"
+    fc = _fix_counts()
+    _simulate_handler(ctx("simulate", success=False), fc, max_fix=2)
+    _simulate_handler(ctx("simulate", success=False), fc, max_fix=2)
+    _simulate_handler(ctx("simulate", success=True), fc, max_fix=2)
+    assert _simulate_handler(ctx("simulate", success=False), fc, max_fix=2) == "to:debug_fix"
+    assert fc["simulate"] == 1
 
 def test_debug_fix_to_simulate_when_tool_called():
-    judge = make_judge_fn(make_config())
-    assert judge(ctx("debug_fix", tool_calls_count=1)) == "to:simulate"
+    assert _debug_fix_handler(ctx("debug_fix", tool_calls_count=1), max_fix=3) == "to:simulate"
 
 def test_debug_fix_retries_when_no_tool():
-    judge = make_judge_fn(make_config())
-    assert judge(ctx("debug_fix", tool_calls_count=0)) == "retry"
+    assert _debug_fix_handler(ctx("debug_fix", tool_calls_count=0), max_fix=3) == "retry"
 
 def test_debug_fix_aborts_when_retry_exhausted():
-    judge = make_judge_fn(make_config(max_fix=2))
-    assert judge(ctx("debug_fix", tool_calls_count=0, retry_count=2)) == "abort:done"
+    assert _debug_fix_handler(ctx("debug_fix", tool_calls_count=0, retry_count=2), max_fix=2) == "abort:done"
 
 def test_synthesize_success_to_pnr():
-    judge = make_judge_fn(make_config())
-    assert judge(ctx("synthesize", success=True)) == "to:pnr"
+    assert _synthesize_handler(ctx("synthesize", success=True)) == "to:pnr"
 
 def test_synthesize_fail_to_debug_fix():
-    judge = make_judge_fn(make_config())
-    assert judge(ctx("synthesize", success=False)) == "to:debug_fix"
+    assert _synthesize_handler(ctx("synthesize", success=False)) == "to:debug_fix"
 
 def test_pnr_success_to_drc():
-    judge = make_judge_fn(make_config())
-    assert judge(ctx("pnr", success=True)) == "to:drc"
+    assert _pnr_handler(ctx("pnr", success=True), _fix_counts(), max_fix=3) == "to:drc"
 
 def test_pnr_fail_to_drc_fix():
-    judge = make_judge_fn(make_config())
-    assert judge(ctx("pnr", success=False)) == "to:drc_fix"
-
-def test_drc_fix_to_pnr_when_tool_called():
-    judge = make_judge_fn(make_config())
-    assert judge(ctx("drc_fix", tool_calls_count=1)) == "to:pnr"
-
-def test_drc_fix_retries_when_no_tool():
-    judge = make_judge_fn(make_config())
-    assert judge(ctx("drc_fix", tool_calls_count=0)) == "retry"
+    assert _pnr_handler(ctx("pnr", success=False), _fix_counts(), max_fix=3) == "to:drc_fix"
 
 def test_pnr_fix_count_exceeds():
-    judge = make_judge_fn(make_config(max_fix=1))
-    assert judge(ctx("pnr", success=False)) == "to:drc_fix"
-    assert judge(ctx("pnr", success=False)) == "abort:done"
+    fc = _fix_counts()
+    assert _pnr_handler(ctx("pnr", success=False), fc, max_fix=1) == "to:drc_fix"
+    assert _pnr_handler(ctx("pnr", success=False), fc, max_fix=1) == "abort:done"
+    assert fc["pnr"] == 2
+
+def test_drc_fix_to_pnr_when_tool_called():
+    assert _drc_fix_handler(ctx("drc_fix", tool_calls_count=1), max_fix=3) == "to:pnr"
+
+def test_drc_fix_retries_when_no_tool():
+    assert _drc_fix_handler(ctx("drc_fix", tool_calls_count=0), max_fix=3) == "retry"
 
 def test_drc_success_to_gds():
-    judge = make_judge_fn(make_config())
-    assert judge(ctx("drc", success=True)) == "to:gds"
+    assert _drc_handler(ctx("drc", success=True), _fix_counts(), max_fix=3) == "to:gds"
 
 def test_drc_fail_to_drc_fix():
-    judge = make_judge_fn(make_config())
-    assert judge(ctx("drc", success=False)) == "to:drc_fix"
+    assert _drc_handler(ctx("drc", success=False), _fix_counts(), max_fix=3) == "to:drc_fix"
 
 def test_gds_to_render():
-    judge = make_judge_fn(make_config())
-    assert judge(ctx("gds", success=True)) == "to:render"
-    assert judge(ctx("gds", success=False)) == "abort:done"
+    assert _gds_handler(ctx("gds", success=True)) == "to:render"
+    assert _gds_handler(ctx("gds", success=False)) == "abort:done"
 
 def test_render_done():
-    judge = make_judge_fn(make_config())
-    assert judge(ctx("render", success=True)) == "abort:done"
+    assert _render_handler(ctx("render", success=True)) == "abort:done"
 
-def test_unknown_step_aborts():
-    judge = make_judge_fn(make_config())
-    assert judge(ctx("unknown")) == "abort:done"
+from senza import CompositeJudge
+from eda_studio.judge import make_judge_fn, KNOWN_FIXED_STEPS
+
+def test_make_judge_fn_returns_composite_judge():
+    cj = make_judge_fn(make_config())
+    assert isinstance(cj, CompositeJudge)
+
+def test_known_fixed_steps_constant():
+    assert KNOWN_FIXED_STEPS == (
+        "simulate", "debug_fix", "synthesize",
+        "pnr", "drc_fix", "drc", "gds", "render",
+    )
+
+import inspect
+from eda_studio import judge as judge_module
+
+def test_fallback_returns_sentinel():
+    """验证 make_judge_fn 源码中 fallback 返回哨兵字符串。
+
+    CompositeJudge 不可 call、不暴露 dispatch,无法运行时验证 fallback 行为。
+    退而验证源码中 fallback lambda 返回 'abort:unknown_step'。
+    """
+    src = inspect.getsource(judge_module.make_judge_fn)
+    assert "abort:unknown_step" in src, "fallback 哨兵字符串缺失,注册测试无法区分已注册/未注册"

@@ -14,7 +14,7 @@ import os
 from pathlib import Path
 from senza import (
     WorkflowEngine, create_os_env, create_executor,
-    create_judge, create_openai_provider, create_anthropic_provider,
+    create_openai_provider, create_anthropic_provider,
     create_pricing_provider, create_fs_tools_plugin,
     create_before_turn_hook, create_after_turn_hook, create_after_tool_call_hook,
     create_after_provider_response_hook,
@@ -182,7 +182,7 @@ def build_workflow(config: AppConfig, design_name: str) -> WorkflowEngine:
         "edges": edges,
     }
 
-    judge = create_judge(make_judge_fn(config, rtl_ids=rtl_ids))
+    judge = make_judge_fn(config, rtl_ids=rtl_ids)
     env = create_os_env(working_dir=str(design_dir))
     engine = WorkflowEngine(
         workflow_dict, provider, config.model, judge, env=env,

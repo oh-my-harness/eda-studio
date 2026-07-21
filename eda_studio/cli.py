@@ -36,7 +36,7 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from senza import (
-    WorkflowEngine, create_os_env, create_judge,
+    WorkflowEngine, create_os_env,
 )
 
 from .config import load_config
@@ -225,7 +225,7 @@ def cmd_restore(design_name: str, config_path: str):
         store_dir, task_id,
         provider=provider,
         model=config.model,
-        judge=create_judge(make_judge_fn(config, rtl_ids=dcfg.rtl_step_ids)),
+        judge=make_judge_fn(config, rtl_ids=dcfg.rtl_step_ids),
         env=env,
         session_base_dir=_session_base_dir(),
     )
