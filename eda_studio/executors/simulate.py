@@ -61,8 +61,15 @@ def simulate_executor(ctx: dict) -> dict:
     report = _parse_verilator_output(result.stderr, run_result.stdout)
     (sim_dir / "report.txt").write_text(report)
 
+    # success 不能只看 returncode:testbench 用 $finish 退出时 returncode=0,
+    # 无论 TEST PASSED 还是 TEST FAILED。必须解析 stdout 里的测试结果。
+    stdout = run_result.stdout or ""
+    test_passed = "TEST PASSED" in stdout
+    test_failed = "TEST FAILED" in stdout or "TEST FAILED: timeout" in stdout
+    success = run_result.returncode == 0 and test_passed and not test_failed
+
     return {
         "output": report,
-        "structured": {"success": run_result.returncode == 0,
+        "structured": {"success": success,
                        "report_path": str(sim_dir / "report.txt")},
     }
