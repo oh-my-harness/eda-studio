@@ -10,7 +10,6 @@ senza API 偏差(以实际 pyi/runtime 为准):
    judge 返回 "done" 终止)。
 """
 from dataclasses import asdict
-import os
 from pathlib import Path
 from senza import (
     WorkflowEngine, create_os_env, create_executor,
@@ -32,13 +31,6 @@ from .executors import (
 
 
 
-def _session_base_dir() -> str:
-    """session 根目录。默认 'sessions'(仓库根),可通过环境变量覆盖。
-
-    空字符串视为未设,回退到默认值。
-    """
-    val = os.environ.get("EDA_STUDIO_SESSION_DIR")
-    return val if val else "sessions"
 
 def build_providers(config: AppConfig):
     """从 provider_spec/pricing_spec 创建 senza Provider + PricingProvider。"""
