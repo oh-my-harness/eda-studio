@@ -17,13 +17,12 @@ from senza import (
     create_before_turn_hook, create_after_turn_hook, create_after_tool_call_hook,
     create_after_provider_response_hook,
     create_before_run_hook,
-    create_should_stop_hook, create_transform_context_hook,
-    create_shell_executor,
+    create_should_stop_hook, create_shell_executor,
 )
 from .config import AppConfig
 from .prompts import build_prompts, load_requirement
 from .judge import make_judge_fn
-from .hooks import make_hooks, make_provider_response_logger, make_empty_response_nudge_hooks
+from .hooks import make_hooks, make_provider_response_logger, make_max_tokens_continue_hook
 from .plugin import RTL_SYSTEM, DEBUG_FIX_SYSTEM, DRC_FIX_SYSTEM
 from .executors import (
     simulate_executor, synthesize_executor, pnr_executor,
@@ -154,16 +153,10 @@ def build_workflow(config: AppConfig, design_name: str) -> WorkflowEngine:
     for sid in rtl_ids + ["debug_fix", "drc_fix"]:
         engine = engine.with_step_plugin(sid, fs_plugin)
 
-    # 空响应纠正:EndTurn 无 tool_use → should_stop 返回 False(继续 turn)
-    # + transform_context 注入 nudge(响应式反馈)。
-    # nudge 计数在每次 step run 开始时重置(before_run hook)。
-    should_stop_cb, nudge_transform_cb, reset_nudge = make_empty_response_nudge_hooks()
-    # provider 响应日志:记录 HTTP 状态码/延迟/token 用量(诊断用)
-    # system_prompt 通过 before_run hook 设置(with_step_plugin 是 insert 覆盖,
-    # 不能同时注册 FsToolsPlugin 和 system_prompt plugin)。
-    # 根据 prompt_text 内容特征匹配 step 类型。
+    # MaxTokens auto-continue:thinking 链被截断时让模型续输
+    # + provider 响应日志 + system_prompt(通过 before_run hook)
+    # system_prompt 用 before_run hook 而非 with_step_plugin(后者是 insert 覆盖)
     def set_system_prompt_cb(ctx: dict):
-        reset_nudge()
         prompt_text = ctx.get("prompt_text", "")
         if "DRC" in prompt_text or "drc" in prompt_text:
             sp = DRC_FIX_SYSTEM
@@ -174,8 +167,7 @@ def build_workflow(config: AppConfig, design_name: str) -> WorkflowEngine:
         return {"system_prompt": sp, "additional_messages": []}
 
     engine = engine.with_hooks([
-        create_should_stop_hook(should_stop_cb),
-        create_transform_context_hook(nudge_transform_cb),
+        create_should_stop_hook(make_max_tokens_continue_hook()),
         create_after_provider_response_hook(make_provider_response_logger()),
         create_before_run_hook(set_system_prompt_cb),
     ])

@@ -25,11 +25,11 @@ from pathlib import Path
 from senza import (
     WorkflowEngine, create_os_env, create_executor, create_judge,
     create_fs_tools_plugin, create_before_run_hook,
-    create_should_stop_hook, create_transform_context_hook,
+    create_should_stop_hook,
 )
 from .workflow import build_workflow, build_providers, _wrap_hooks
 from .judge import make_judge_fn
-from .hooks import make_hooks, make_provider_response_logger, make_empty_response_nudge_hooks
+from .hooks import make_hooks, make_provider_response_logger, make_max_tokens_continue_hook
 from .executors import (
     simulate_executor, synthesize_executor, pnr_executor,
     drc_executor, gds_executor,
@@ -58,11 +58,9 @@ def _re_register(engine, config, design_name, rtl_ids):
     )
     for sid in rtl_ids[1:] + ["debug_fix", "drc_fix"]:
         engine = engine.with_step_plugin(sid, fs_plugin)
-    # 空响应纠正 + provider 日志 + system_prompt(同 build_workflow)
-    should_stop_cb, nudge_transform_cb, reset_nudge = make_empty_response_nudge_hooks()
+    # MaxTokens auto-continue + provider 日志 + system_prompt(同 build_workflow)
     from .plugin import RTL_SYSTEM, DEBUG_FIX_SYSTEM, DRC_FIX_SYSTEM
     def set_system_prompt_cb(ctx: dict):
-        reset_nudge()
         prompt_text = ctx.get("prompt_text", "")
         if "DRC" in prompt_text or "drc" in prompt_text:
             sp = DRC_FIX_SYSTEM
@@ -72,12 +70,10 @@ def _re_register(engine, config, design_name, rtl_ids):
             sp = RTL_SYSTEM
         return {"system_prompt": sp, "additional_messages": []}
     engine = engine.with_hooks([
-        create_should_stop_hook(should_stop_cb),
-        create_transform_context_hook(nudge_transform_cb),
+        create_should_stop_hook(make_max_tokens_continue_hook()),
         create_after_provider_response_hook(make_provider_response_logger()),
         create_before_run_hook(set_system_prompt_cb),
     ])
-
     # context 变量:dataclass 需 asdict 才能 JSON 序列化
     engine.set_context_variable("design_dir", f"designs/{design_name}")
     engine.set_context_variable("docker_config", asdict(config.docker_config))

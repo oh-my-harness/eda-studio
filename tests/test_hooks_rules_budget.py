@@ -1,6 +1,6 @@
 import logging
 from eda_studio.budget import make_budget_cb
-from eda_studio.hooks import make_hooks, make_empty_response_nudge_hooks
+from eda_studio.hooks import make_hooks, make_max_tokens_continue_hook
 from eda_studio.config import AppConfig, WorkflowConfig, ShellConfig, DockerConfig
 
 def make_config(action="stop"):
@@ -37,27 +37,11 @@ def test_make_hooks_returns_three_closures():
     assert hooks[2]({"tool_name": "write"}) == "passthrough"
 
 
-def test_nudge_turn0_empty_response_returns_false():
-    should_stop, _, _ = make_empty_response_nudge_hooks()
-    ctx = {"turn_index": 0, "stop_reason": "end_turn", "last_assistant": {"content": []}}
-    assert should_stop(ctx) is False  # 继续 turn
 
-def test_nudge_turn0_has_tool_use_returns_true():
-    should_stop, _, _ = make_empty_response_nudge_hooks()
-    ctx = {"turn_index": 0, "stop_reason": "end_turn",
-           "last_assistant": {"content": [{"type": "tool_use", "id": "1", "name": "x"}]}}
-    assert should_stop(ctx) is True
-
-def test_nudge_turn_gt0_empty_stops():
-    # turn > 0 空响应(无 tool_use) → 正常停止(模型已在之前 turn 调过工具)
-    should_stop, _, _ = make_empty_response_nudge_hooks(max_nudge=3)
-    ctx = {"turn_index": 1, "stop_reason": "end_turn", "last_assistant": {"content": []}}
-    assert should_stop(ctx) is True
-
-def test_nudge_max_tokens_auto_continue():
+def test_max_tokens_auto_continue():
     """MaxTokens 截断时应返回 False(继续),让模型续输。"""
-    should_stop, _, _ = make_empty_response_nudge_hooks(max_auto_continue=3)
-    ctx = {"turn_index": 0, "stop_reason": "max_tokens", "last_assistant": {"content": []}}
+    should_stop = make_max_tokens_continue_hook(max_auto_continue=3)
+    ctx = {"stop_reason": "max_tokens"}
     # 前 3 次返回 False(auto-continue)
     assert should_stop(ctx) is False
     assert should_stop(ctx) is False
@@ -65,27 +49,8 @@ def test_nudge_max_tokens_auto_continue():
     # 第 4 次耗尽,返回 True(停止)
     assert should_stop(ctx) is True
 
-def test_nudge_transform_injects_message():
-    should_stop, transform, _ = make_empty_response_nudge_hooks()
-    should_stop({"turn_index": 0, "stop_reason": "end_turn", "last_assistant": {"content": []}})
-    result = transform({"messages": [{"role": "user", "content": []}], "system_prompt": "x"})
-    assert len(result["messages"]) == 2
-    assert result["messages"][1]["role"] == "user"
-    assert "tool_use" in result["messages"][1]["content"][0]["text"]
-
-def test_nudge_transform_noop_without_should_stop():
-    _, transform, _ = make_empty_response_nudge_hooks()
-    result = transform({"messages": [{"role": "user", "content": []}], "system_prompt": "x"})
-    assert len(result["messages"]) == 1
-
-def test_nudge_reset_clears_count():
-    """reset() 后 nudge 计数归零,可以重新 nudge。"""
-    should_stop, _, reset = make_empty_response_nudge_hooks(max_nudge=2)
-    ctx = {"turn_index": 0, "stop_reason": "end_turn", "last_assistant": {"content": []}}
-    # 用完 2 次 nudge
-    assert should_stop(ctx) is False
-    assert should_stop(ctx) is False
-    assert should_stop(ctx) is True  # 耗尽
-    # reset 后重新计数
-    reset()
-    assert should_stop(ctx) is False
+def test_non_max_tokens_stops():
+    """非 MaxTokens 停止原因 → 正常停止。"""
+    should_stop = make_max_tokens_continue_hook()
+    assert should_stop({"stop_reason": "end_turn"}) is True
+    assert should_stop({"stop_reason": "tool_use"}) is True
