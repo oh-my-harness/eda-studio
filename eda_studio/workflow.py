@@ -30,8 +30,6 @@ from .executors import (
 )
 
 
-
-
 def build_providers(config: AppConfig):
     """从 provider_spec/pricing_spec 创建 senza Provider + PricingProvider。"""
     spec = config.provider_spec
