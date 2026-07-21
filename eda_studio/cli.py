@@ -318,6 +318,11 @@ def cmd_serve(config_path: str, port: int, host: str = "0.0.0.0"):
     """启动 Web UI(uvicorn + FastAPI)。"""
     run_server(config_path, host, port)
 
+def cmd_gui(config_path: str):
+    """启动桌面应用(NiceGUI native webview)。"""
+    from .webui_nicegui import run_nicegui_desktop
+    run_nicegui_desktop(config_path)
+
 
 # ── 子命令:init ─────────────────────────────────────────────────────────────
 
@@ -565,6 +570,8 @@ def main(argv=None):
     p_init.add_argument("design")
     p_check = sub.add_parser("check", help="预检环境(config/API/docker/PDK)")
     p_check.add_argument("--config", default="config.yaml")
+    p_gui = sub.add_parser("gui", help="启动桌面应用(NiceGUI native)")
+    p_gui.add_argument("--config", default="config.yaml")
 
     args = parser.parse_args(argv)
     if args.command == "run":
@@ -575,6 +582,8 @@ def main(argv=None):
         cmd_status(args.design)
     elif args.command == "serve":
         cmd_serve(args.config, args.port, args.host)
+    elif args.command == "gui":
+        cmd_gui(args.config)
     elif args.command == "init":
         sys.exit(cmd_init(args.design))
     elif args.command == "check":

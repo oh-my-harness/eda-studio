@@ -55,26 +55,18 @@ def _next_event(iterator: Any) -> Any:
         return None
 
 
-def create_app(
+def register_api_routes(
+    app: Any,
+    state: AppState,
     workflow_runner: Callable[[AppState, str], Any] | None = None,
-    static_dir: str = "static",
-) -> FastAPI:
-    """创建 FastAPI 应用。
+) -> None:
+    """在 FastAPI app 上注册所有 /api/* REST 端点。
 
-    Args:
-        workflow_runner: callable(state, design_name) 跑 workflow。None 时 POST /api/task 返回 202 但不执行。
-        static_dir: 静态文件目录(前端 index.html)。
+    server.py (旧 WebUI) 和 webui_nicegui.py (桌面应用) 共用此函数,
+    保证两套 UI 的后端 handler 逻辑完全一致。
     """
-    state = AppState()
+    import threading
 
-    @asynccontextmanager
-    async def lifespan(app: FastAPI):
-        yield
-
-    app = FastAPI(lifespan=lifespan)
-    app.state = state  # type: ignore[assignment]
-
-    # ── POST /api/task ──────────────────────────────────────────
     @app.post("/api/task")
     async def submit_task(req: TaskRequest):
         if state.task_running:
@@ -97,7 +89,6 @@ def create_app(
                 state.task_running = False
                 state.clear_active_task()
 
-        import threading
         thread = threading.Thread(target=_run_in_background, daemon=True)
         thread.start()
 
@@ -106,12 +97,10 @@ def create_app(
             content={"message": "task started", "design": req.design},
         )
 
-    # ── GET /api/status ─────────────────────────────────────────
     @app.get("/api/status")
     async def get_status():
         return JSONResponse(status_code=200, content=state.status_snapshot())
 
-    # ── GET /api/designs ────────────────────────────────────────
     @app.get("/api/designs")
     async def list_designs():
         """列出可用的 design 模板(eda_studio/templates/ 下的子目录)。"""
@@ -123,7 +112,6 @@ def create_app(
             names = []
         return JSONResponse(status_code=200, content={"designs": names})
 
-    # ── GET /api/workflow-steps ────────────────────────────────
     @app.get("/api/workflow-steps")
     async def get_workflow_steps():
         """返回当前 design 的 workflow step 列表(从 design.yaml 动态生成)。"""
@@ -149,7 +137,6 @@ def create_app(
         steps.extend(fixed)
         return JSONResponse(status_code=200, content={"steps": steps})
 
-    # ── GET /api/report/{step} ──────────────────────────────────
     @app.get("/api/report/{step}")
     async def get_report(step: str):
         """返回对应 step 的 EDA 报告文件内容。"""
@@ -163,7 +150,6 @@ def create_app(
             return PlainTextResponse(f"report not found: {rel}", status_code=404)
         return PlainTextResponse(path.read_text())
 
-    # ── GET /api/render.png ─────────────────────────────────────
     @app.get("/api/render.png")
     async def get_render_png():
         """返回 render step 产出的 PNG 预览图。"""
@@ -174,7 +160,6 @@ def create_app(
             return PlainTextResponse("render not found", status_code=404)
         return FileResponse(path, media_type="image/png")
 
-    # ── GET /api/file/{path:path} ───────────────────────────────
     @app.get("/api/file/{file_path:path}")
     async def get_design_file(file_path: str):
         """返回 design 目录下的文件(rtl/sim/synth/pnr/gds 产物)。"""
@@ -188,6 +173,28 @@ def create_app(
         if not path.is_file():
             return PlainTextResponse(f"not found: {file_path}", status_code=404)
         return PlainTextResponse(path.read_text())
+
+
+def create_app(
+    workflow_runner: Callable[[AppState, str], Any] | None = None,
+    static_dir: str = "static",
+) -> FastAPI:
+    """创建 FastAPI 应用。
+
+    Args:
+        workflow_runner: callable(state, design_name) 跑 workflow。None 时 POST /api/task 返回 202 但不执行。
+        static_dir: 静态文件目录(前端 index.html)。
+    """
+    state = AppState()
+
+    @asynccontextmanager
+    async def lifespan(app: FastAPI):
+        yield
+
+    app = FastAPI(lifespan=lifespan)
+    app.state = state  # type: ignore[assignment]
+
+    register_api_routes(app, state, workflow_runner)
 
     # ── WS /ws ──────────────────────────────────────────────────
     @app.websocket("/ws")

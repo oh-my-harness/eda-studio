@@ -35,7 +35,9 @@ eda-studio check
 
 # 5. 运行 RTL→GDS 全流程
 eda-studio run uart
-# 或启动 Web UI
+# 或启动桌面应用(NiceGUI 原生窗口)
+eda-studio gui
+# 或启动 Web UI(浏览器访问)
 eda-studio serve --port 3000
 ```
 
@@ -55,19 +57,26 @@ eda-studio serve --port 3000
 | `init <design>` | 从模板复制 design 输入文件 |
 | `check` | 预检环境(config/API/docker/PDK) |
 | `run <design>` | 运行设计流程,终端实时输出 |
-| `serve` | 启动 Web UI |
+| `gui` | 启动桌面应用(NiceGUI 原生窗口) |
+| `serve` | 启动 Web UI(浏览器) |
 | `restore <design>` | 从断点恢复 |
 | `status <design>` | 查看状态 |
 
-## Web UI
+## 界面
 
-`eda-studio serve` 启动后,浏览器访问 `http://localhost:3000`:
+两种界面共享同一套后端逻辑,三栏布局:
+
+**桌面应用**(推荐):`eda-studio gui` — NiceGUI 原生窗口(1280×800),无需浏览器
+
+**Web UI**:`eda-studio serve --port 3000` — 浏览器访问 `http://localhost:3000`
+
+布局:
 
 - 左栏:workflow 流程图(rtl_tx → ... → gds → render),实时高亮当前 step,LLM/EXEC 类型标签
-- 中栏:当前 step 的工具调用和输出,点击任意已完成 step 可回看
+- 中栏:当前 step 的工具调用和输出,点击任意已完成 step 可回看,显示 token 用量与成本
 - 右栏:事件时间线
 
-render step 完成后显示 GDS 渲染预览 PNG。
+顶栏实时显示累计成本($)和 token 用量(input/output/cache)。render step 完成后显示 GDS 渲染预览 PNG。
 
 ## Workflow
 
@@ -102,8 +111,9 @@ flowchart LR
 
 ```
 eda_studio/
-├── cli.py              # CLI 入口(run/restore/status/serve/init/check)
+├── cli.py              # CLI 入口(run/restore/status/serve/gui/init/check)
 ├── workflow.py         # 组装 WorkflowEngine + _register_engine(build/restore 共用)
+├── webui_nicegui.py    # NiceGUI 桌面应用(三栏 + 事件流)
 ├── judge.py            # step 路由决策(仿真失败→debug_fix 等)
 ├── hooks.py            # MaxTokens auto-continue + provider 响应日志
 ├── plugin.py           # LLM step 的 system prompt 常量
